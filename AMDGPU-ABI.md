@@ -24,8 +24,8 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 | AMD | AMDGPU | 7 | 0 | 1 | GFX7, 1/2 double FP | Hawaii |
 | AMD | AMDGPU | 8 | 0 | 0 | GFX8, SPI register limitation, -XNACK | Iceland, Tonga |
 | AMD | AMDGPU | 8 | 0 | 1 | GFX8, +XNACK | Carrizo |
-| AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, -XNACK, PCIe Gen3 atomics | Boltzmann Tonga |
-| AMD | AMDGPU | 8 | 0 | 3 | GFX8, -XNACK, PCIe Gen3 atomics | Boltzmann Fiji |
+| AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, -XNACK, PCIe Gen3 atomics | ROCm Tonga |
+| AMD | AMDGPU | 8 | 0 | 3 | GFX8, -XNACK, PCIe Gen3 atomics | ROCm Fiji |
 | AMD | AMDGPU | 8 | 0 | 4 | GFX8, -XNACK | Fiji |
 | AMD | AMDGPU | 8 | 1 | 0 | GFX8, +XNACK | Stoney |
 
