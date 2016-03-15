@@ -20,7 +20,7 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 
 | **Vendor** | **Architecture** | **Major** | **Minor** | **Stepping** | **Comments** | **Examples** |
 | --- | --- | --- | --- | --- | --- | --- |
-| AMD | AMDGPU | 7 | 0 | 0 | GFX7, 116 double FP | Kaveri, Bonaire |
+| AMD | AMDGPU | 7 | 0 | 0 | GFX7, 1/16 double FP | Kaveri, Bonaire |
 | AMD | AMDGPU | 7 | 0 | 1 | GFX7, 1/2 double FP | Hawaii |
 | AMD | AMDGPU | 8 | 0 | 0 | GFX8, SPI register limitation, -XNACK | Iceland, Tonga |
 | AMD | AMDGPU | 8 | 0 | 1 | GFX8, +XNACK | Carrizo |
