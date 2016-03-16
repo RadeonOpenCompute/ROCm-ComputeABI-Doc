@@ -5,31 +5,31 @@ Version 0.40 (March 2016)
 Table of Contents
 =================
 
-* [AMDGPU Compute Application Binary Interface](#amdgpu-compute-application-binary-interface)
-  * [Introduction](#introduction)
-  * [Platform details](#platform-details)
-    * [Kernel dispatch](#kernel-dispatch)
-    * [Initial kernel register state](#initial-kernel-register-state)
-    * [Kernel prolog code](#kernel-prolog-code)
-    * [Flat scratch](#flat-scratch)
-  * [Entity definitions](#entity-definitions)
-    * [Instruction set architecture (ISA)](#instruction-set-architecture-isa)
-    * [AMD Kernel Code](#amd-kernel-code)
-    * [AMD Kernel Code Object (amd_kernel_code_t)](#amd-kernel-code-object-amd_kernel_code_t)
+* [Introduction](#introduction)
+* [Platform details](#platform-details)
+  * [Kernel dispatch](#kernel-dispatch)
+  * [Initial kernel register state](#initial-kernel-register-state)
+  * [Kernel prolog code](#kernel-prolog-code)
+  * [Flat scratch](#flat-scratch)
+* [Entity definitions](#entity-definitions)
+  * [Instruction set architecture (ISA)](#instruction-set-architecture-isa)
+  * [AMD Kernel Code](#amd-kernel-code)
+    * [AMD Kernel Code Object amd_kernel_code_t](#amd-kernel-code-object-amd_kernel_code_t)
     * [Compute shader program settings 1 (amd_compute_pgm_rsrc1_t)](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t)
     * [Compute shader program settings 2 (amd_compute_pgm_rsrc2_t)](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
     * [AMD Machine Kind (amd_machine_kind_t)](#amd-machine-kind-amd_machine_kind_t)
     * [Float Round Mode](#float-round-mode)
-    * [AMD Queue](#amd_queue)
-       * [HSA AQL Queue Object (hsa_queue_t)](#hsa-aql-queue-object-hsa_queue_t)
-       * [AMD AQL Queue Object (amd_queue_t)](#amd-aql-queue-object-amd_queue_t)
-    * [Signals](#signals)
-      * [Signal Overview](#signal-overview)
-      * [Signal Kind (amd_signal_kind_t)](#signal-kind-amd_signal_kind_t)
-      * [Signal Object (amd_signal_t)](#signal-object-amd_signal_t)
-      * [Signal kernel machine code](#signal-kernel-machine-code)
-    * [Terms and definitions](#terms-and-definitions)
-    * [References](#references)
+  * [AMD Queue](#amd-queue)
+     * [HSA AQL Queue Object hsa_queue_t](#hsa-aql-queue-object-hsa_queue_t)
+     * [AMD AQL Queue Object amd_queue_t](#amd-aql-queue-object-amd_queue_t)
+     * [Queue operations](#queue-operations)
+  * [Signals](#signals)
+    * [Signal Overview](#signal-overview)
+    * [Signal Kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
+    * [Signal Object amd_signal_t](#signal-object-amd_signal_t)
+    * [Signal kernel machine code](#signal-kernel-machine-code)
+* [Terms and definitions](#terms-and-definitions)
+* [References](#references)
 
 ### Introduction
 
@@ -40,15 +40,15 @@ This specification defines the application binary interface (ABI) provided by th
 
 #### Kernel dispatch
 
-The HSA Architected Queuing Language (AQL) defines a user space memory interface, an AQL Queue, to an agent that can be used to control the dispatch of kernels, using AQL Packets, in an agent independent way. All AQL packets are 64 bytes and are defined in "HSA Platform System Architecture Specification". The packet processor of a kernel agent is responsible for detecting and dispatching HSAIL kernels from the AQL Queues associated with it. For AMD GPUs the packet processor is implemented by the Command Processor (CP).
+The HSA Architected Queuing Language (AQL) defines a user space memory interface, an AQL Queue, to an agent that can be used to control the dispatch of kernels, using AQL Packets, in an agent independent way. All AQL packets are 64 bytes and are defined in "HSA Platform System Architecture Specification". The packet processor of a kernel agent is responsible for detecting and dispatching kernels from the AQL Queues associated with it. For AMD GPUs the packet processor is implemented by the Command Processor (CP).
 
-The AMD HSA runtime allocates the AQL Queue object. It uses the AMD Kernel Fusion Driver (KFD) to initialize and register the AQL Queue with CP. Refer to ["AMD Queue"](#amd_queue) for more information.
+The AMD HSA runtime allocates the AQL Queue object. It uses the AMD Kernel Fusion Driver (KFD) to initialize and register the AQL Queue with CP. Refer to ["AMD Queue"](#amd-queue) for more information.
 
 A kernel dispatch is initiated with the following sequence defined in "HSA System Architecture Specification" (it may occur on CPU host agent from a host program, or from an HSA kernel agent such as a GPU from another kernel):
   * A pointer to an AQL Queue for the kernel agent on which the kernel is to be executed is obtained.
   * A pointer to the amd_kernel_code_t object of the kernel to execute is obtained. It must be for a kernel that was loaded on the kernel agent with which the AQL Queue is associated.
-  * Space is allocated for the kernel arguments using the HSA runtime allocator for a memory region with the kernarg property for the kernel agent that will execute the kernel, and the values of the kernel arguments are assigned. This memory corresponds to the backing memory for the kernarg segment within the kernel being called. Its layout is defined in the HSAIL Programming Language Specification. For AMD the kernel execution directly uses the backing memory for the kernarg segment as the kernarg segment.
-  * HSA Runtime API or special HSAIL operations is used to reserve space in the AQL queue for the packet.
+  * Space is allocated for the kernel arguments using the HSA runtime allocator for a memory region with the kernarg property for the kernel agent that will execute the kernel, and the values of the kernel arguments are assigned. This memory corresponds to the backing memory for the kernarg segment within the kernel being called. Its layout is defined in "HSA Programmer Reference Manual Specification". For AMD the kernel execution directly uses the backing memory for the kernarg segment as the kernarg segment.
+  * Queue operations is used to reserve space in the AQL queue for the packet.
   * The packet contents are set up, including information about the actual dispatch, such as grid and work-group size, together with information from the code object about the kernel, such as segment sizes.
   * The packet is assigned to packet processor by changing format field from INVALID to KERNEL_DISPATCH. Atomic memory operation must be used.
   * A doorbell signal for the queue is signaled to notify packet processor.
@@ -56,8 +56,8 @@ A kernel dispatch is initiated with the following sequence defined in "HSA Syste
 At some point, CP performs actual kernel execution:
   * CP detects a packet on AQL queue.
   * CP executes micro-code for setting up the GPU and wavefronts for a kernel dispatch.
-  * CP ensures that when the a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up as required by the machine code. See ["Initial kernel register state"](#initial_register_state) for more information.
-  * The prolog of the kernel machine code, described in section 2.9.7, sets up the machine state as necessary before continuing executing the machine code that corresponds to the HSAIL of the kernel.
+  * CP ensures that when a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up based on flags in amd_kernel_code_t (see ["Initial kernel register state"](#initial_register_state)).
+  * When a wavefront start executing the kernel machine code, the prolog (see ["Kernel prolog code"](#kernel-prolog-code)) sets up the machine state as necessary.
   * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0.
 
 <a name="initial_register_state"></a>
@@ -157,7 +157,7 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 
 AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a kernel dispatch and consists of the meta data needed to initiate the execution of a kernel, including the entry point address of the machine code that implements the kernel.
 
-##### AMD Kernel Code Object (amd_kernel_code_t)
+##### AMD Kernel Code Object amd_kernel_code_t
 
 | **Bits** | **Size** | **Field Name** | **Description** |
 | --- | --- | --- | --- |
@@ -186,7 +186,7 @@ AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a
 | 463:458 | 6 bits | Reserved. Must be 0. |
 | 464 | 1 bit | enable\_ordered\_append\_gds | Control wave ID base counter for GDS ordered-append. Used to set COMPUTE\_DISPATCH\_INITIATOR.ORDERED\_APPEND\_ENBL. |
 | 466:465 | 2 bits | private\_element\_size  | The interleave (swizzle) element size in bytes required by the machine code for private memory. This must be 2, 4, 8 or 16. Values are defined by Table 36. The AMD HSA Runtime Finalizer always uses 4. Hardware will interleave the memory requests of each lane of a wavefront by this element size to ensure each work-item gets a distinct memory location. For GFX8 and earlier, the finalizer ensures that all load and store operations done to private memory using the scratch buffer do not exceed this size. For example, if the element size is 4 (32-bits or dword) and a 64-bit value must be loaded, the finalizer will generate two 32-bit loads. This ensures that the interleaving will get the work-item specific dword for both halves of the 64-bit value. If it just did a64-bit load then it would get one dword which belonged to its own work-item, but the second dword would belong to the adjacent lane work-item since the interleaving is in dwords. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE). |
-| 467 | 1 bit | is\_ptr64 | 1 if global memory addresses are 64 bits, otherwise 0. Must match SH\_MEM\_CONFIG.PTR32 (GFX6 (SI)/GFX7 (CI)), SH\_MEM\_CONFIG.ADDRESS\_MODE (GFX8 (VI)+). Must be 1 for HSAIL machine model is HSA\_MACHINE\_LARGE. |
+| 467 | 1 bit | is\_ptr64 | 1 if global memory addresses are 64 bits, otherwise 0. Must match SH\_MEM\_CONFIG.PTR32 (GFX7), SH\_MEM\_CONFIG.ADDRESS\_MODE (GFX8+). |
 | 468 | 1 bit | is\_dynamic\_call\_stack | Indicates if the generated machine code is using a dynamically sized call stack. This can happen if calls are implemented using a call stack andrecursion, alloca or calls to indirect functions are present. In these cases the Finalizer cannot compute the total private segment size at compile time. In this case the workitem\_private\_segment\_byte\_size only specifies the statically know private segment size, and additional space must be added for the call stack. | 
 | 469 | 1 bit | is\_debug\_enabled | Indicates if the generated machine code includes code required by the debugger. |
 | 470 | 1 bit | is\_xnack\_enabled | Indicates if the generated machine code uses conservative XNACK register allocation. |
@@ -208,10 +208,10 @@ AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a
 | 815:808 | 1 byte | group\_segment\_alignment |
 | 823:816 | 1 byte | private\_segment\_alignment | 
 | 831:824 | 1 byte | wavefront\_size | Wavefront size expressed as a power of two. Must be a power of 2 in range 1..256 inclusive. Used to support runtime query that obtains wavefront size, which may be used by application to allocated dynamic group memory and set the dispatch work-group size. |
-| 863:832 | 4 bytes | call\_convention | Call convention used to produce the machine code for the kernel. This specifies the function call convention ABI used for HSAIL indirect functions. If the application specified that the Finalizer should select the call convention, then this value must be the value selected, not the -1 specified to the Finalizer. If the code object is not generated for HSAIL/BRIG and does not support indirect functions, then the value must be 0xffffffff. |
+| 863:832 | 4 bytes | call\_convention | Call convention used to produce the machine code for the kernel. This specifies the function call convention ABI used for indirect functions. If the application specified that the Finalizer should select the call convention, then this value must be the value selected, not the -1 specified to the Finalizer. If the code object does not support indirect functions, then the value must be 0xffffffff. |
 | 960:864 | 12 bytes | Reserved. Must be 0. |
 | 1023:960 | 8 bytes | runtime\_loader\_kernel\_symbol | A pointer to the loaded kernel symbol. This field must be 0 when amd\_kernel\_code\_t is created. The HSA Runtime loader initializes this field once the code object is loaded to reference the loader symbol for the kernel. This field is used to allow the debugger to locate the debug information for the kernel. The definition of the loaded kernel symbol is located in hsa/runtime/executable.hpp. |
-| 2047:1024 | 128 bytes | control\_directive | The values should be the actually values used by the finalizer in generating the machine code. This may be the union of values specified as finalizer arguments and explicit HSAIL control directives. If the finalizer chooses to ignore a control directive, and not generate constrained code, then the control directive should not be marked as enabled even though it was present in the HSAIL or finalizer argument. The values are intended to reflect the constraints that the code actually requires to correctly execute, not the values that were actually specified at finalize time. See Table 34. |
+| 2047:1024 | 128 bytes | control\_directive | Control directives for this kernel used in generating the machine code. The values are intended to reflect the constraints that the code actually requires to correctly execute, not the values that were actually specified at finalize time. If the finalizer chooses to ignore a control directive, and not generate constrained code, then the control directive should not be marked as enabled. |
 | 2048 | | | Total size 256 bytes. |
 
 <a name="amd_compute_pgm_rsrc1"></a>
@@ -287,11 +287,11 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 
 #### AMD Queue
 
-##### HSA AQL Queue Object (hsa_queue_t)
+##### HSA AQL Queue Object hsa_queue_t
 
-HSA Queue Object is defined in __HSA Platform System Architecture Specification__
+HSA Queue Object is defined in "HSA Platform System Architecture Specification". AMD HSA Queue handle is a pointer to amd_queue_t.
 
-##### AMD AQL Queue Object (amd_queue_t)
+##### AMD AQL Queue Object amd_queue_t
 
 The AMD HSA Runtime implementation uses the AMD Queue object (amd_queue_t) to implement AQL queues. It begins with the HSA Queue object, and then has additional information contiguously afterwards that is AMD device specific. The AMD device specific information is accessible by the AMD HSA Runtime, CP and kernel machine code.
 
@@ -315,6 +315,18 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 | 1024 | | | Start of cache line for fields accessed by the packet processor (CP micro code). These are kept in a single cache line to minimize memory accesses performed by CP micro code. |
 | 1536 | | | Start of next cache line for fields not accessed under normal conditions by the packet processor (CP micro code). These are kept in a single cache line to minimize memory accesses performed by CP micro code. |
 | 2048 | | | Total size 256 bytes. |
+
+##### Queue operations
+
+A queue has an associated set of high-level operations defined in "HSA Runtime Specification" (API functions in host code) and "HSA Programmer Reference Manual Specification" (HSAIL kernel code).
+
+The following is informal description of AMD implementation of queue operations (all use memory scope system, memory order applies):
+  * Load Queue Write Index: Atomic load of read_dispatch_id field
+  * Store Queue Write Index: Atomic store of read_dispatch_id field
+  * Load Queue Read Index: Atomic load of write_dispatch_id field
+  * Store Queue Read Index: Atomic store of read_dispatch_id field
+  * Add Queue Write Index: Atomic add of write_dispatch_id field
+  * Compare-And-Swap Queue Write Index: Atomic CAS of write_dispatch_id field
 
 #### Signals
 ##### Signal Overview
@@ -401,10 +413,6 @@ The following is informal description of signal operations:
       * Address of the doorbell is in legacy_hardware_doorbell_ptr field of amd_signal_t.
     * Release spinlock protecting the legacy doorbell of the queue. Atomic store of value 0.
   * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
-
-Notes:
-  * Although CZ provides us context-switching support, it is at a dispatch level granularity (and is also not selective from the ISA).
-
 
 ### Terms and definitions
 
