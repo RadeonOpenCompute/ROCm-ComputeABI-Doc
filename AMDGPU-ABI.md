@@ -10,6 +10,7 @@ Table of Contents
   * [Platform details](#platform-details)
     * [Kernel dispatch](#kernel-dispatch)
     * [Initial kernel register state](#initial-kernel-register-state)
+    * [Kernel prolog code](#kernel-prolog-code)
     * [Flat scratch](#flat-scratch)
   * [Entity definitions](#entity-definitions)
     * [Instruction set architecture (ISA)](#instruction-set-architecture-isa)
@@ -19,13 +20,14 @@ Table of Contents
     * [Compute shader program settings 2 (amd_compute_pgm_rsrc2_t)](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
     * [AMD Machine Kind (amd_machine_kind_t)](#amd-machine-kind-amd_machine_kind_t)
     * [Float Round Mode](#float-round-mode)
-    * [Queues](#queues)
+    * [AMD Queue](#amd_queue)
        * [HSA AQL Queue Object (hsa_queue_t)](#hsa-aql-queue-object-hsa_queue_t)
        * [AMD AQL Queue Object (amd_queue_t)](#amd-aql-queue-object-amd_queue_t)
     * [Signals](#signals)
-      * [Signal Kind (amd_signal_kind_t)](#amd-signal-kind-amd_signal_kind_t)
-      * [Signal Object (amd_signal_t)](#amd-signal-object-amd_signal_t)
-      * [Signal kernel machine code](#signal-kernel-machine-code-implementation)
+      * [Signal Overview](#signal-overview)
+      * [Signal Kind (amd_signal_kind_t)](#signal-kind-amd_signal_kind_t)
+      * [Signal Object (amd_signal_t)](#signal-object-amd_signal_t)
+      * [Signal kernel machine code](#signal-kernel-machine-code)
     * [Terms and definitions](#terms-and-definitions)
     * [References](#references)
 
@@ -34,24 +36,29 @@ Table of Contents
 This specification defines the application binary interface (ABI) provided by the AMD implementation of the HSA runtime for AMD GPU architecture agents. The AMD GPU architecture is a family of GPU agents which differ in machine code encoding and functionality.
 
 ### Platform details
+#### Code Object, Executable and Loader
+
 #### Kernel dispatch
 
-The HSA Architected Queuing Language (AQL) defines a user space memory interface, an AQL Queue, to an agent that can be used to control the dispatch of kernels, using AQL Packets, in an agent independent way. It is defined in the HSA Platform System Architecture Specification.
+The HSA Architected Queuing Language (AQL) defines a user space memory interface, an AQL Queue, to an agent that can be used to control the dispatch of kernels, using AQL Packets, in an agent independent way. All AQL packets are 64 bytes and are defined in "HSA Platform System Architecture Specification". The packet processor of a kernel agent is responsible for detecting and dispatching HSAIL kernels from the AQL Queues associated with it. For AMD GPUs the packet processor is implemented by the Command Processor (CP).
 
-All AQL packets are 64 bytes and are defined in HSA Platform System Architecture Specification. The packet processor of a kernel agent is responsible for detecting and dispatching HSAIL kernels from the AQL Queues associated with it. For AMD GPUs the packet processor is implemented by the Command Processor (CP).
+The AMD HSA runtime allocates the AQL Queue object. It uses the AMD Kernel Fusion Driver (KFD) to initialize and register the AQL Queue with CP. Refer to ["AMD Queue"](#amd_queue) for more information.
 
-The AMD HSA runtime allocates the AQL Queue object. It uses the AMD Kernel Fusion Driver (KFD) to initialize and register the AQL Queue with CP.
-
-To dispatch a kernel the following actions are performed. This can occur on the CPU host agent from a host program, or from an HSA kernel agent such as a GPU from another kernel.
+A kernel dispatch is initiated with the following sequence defined in "HSA System Architecture Specification" (it may occur on CPU host agent from a host program, or from an HSA kernel agent such as a GPU from another kernel):
   * A pointer to an AQL Queue for the kernel agent on which the kernel is to be executed is obtained.
-  * A pointer to the amd_kernel_code_t object of the kernel to execute is obtained. It must be for a kernel that was loaded on the kernel agent with which the AQL Queue is associated. See section 2.9.7.2.
-  * Space is allocated for the kernel arguments using the HSA runtime allocator for a memory region with the kernarg property for the kernel agent that will execute the kernel, and the values of the kernel arguments are assigned. This memory corresponds to the backing memory for the kernarg segment within the kernel being called. Its layout is defined in the HSAIL Programming Language Specification. For AMD the kernel execution directly uses the backing memory for the kernarg segment as the kernarg segment (the packet processor of non-AMD implementations may copy the backing memory to the initialize the actual memory used by the kernel for the kernarg segment).
-  * An AQL kernel dispatch packet is created on the AQL queue. The HSA Runtime api or special HSAIL operations can be used to reserve space in the AQL queue for the packet. Atomic memory operations must be used to write the packet to ensure it is visible to the kernel agent. AQL defines a doorbell signal mechanism to notify the kernel agent that the AQL queue has been updated. The doorbell signal size must match the machine model address size of the process. These rules, and the layout of the AQL queue and kernel dispatch packet is defined in HSA System Architecture Specification.
-  * A kernel dispatch packet includes information about the actual dispatch, such as grid and work-group size, together with information from the code object about the kernel, such as segment sizes. The HSA Runtime queries on the kernel symbol can be used to obtain the code object values.
-  * CP executes micro-code and is responsible for detecting and setting up the GPU to execute the wavefronts of a kernel dispatch.
-  * CP ensures that when the a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up as required by the machine code. The required setup is defined in the amd_kernel_code_t. The initial register state is defined in section 2.9.8.
+  * A pointer to the amd_kernel_code_t object of the kernel to execute is obtained. It must be for a kernel that was loaded on the kernel agent with which the AQL Queue is associated.
+  * Space is allocated for the kernel arguments using the HSA runtime allocator for a memory region with the kernarg property for the kernel agent that will execute the kernel, and the values of the kernel arguments are assigned. This memory corresponds to the backing memory for the kernarg segment within the kernel being called. Its layout is defined in the HSAIL Programming Language Specification. For AMD the kernel execution directly uses the backing memory for the kernarg segment as the kernarg segment.
+  * HSA Runtime API or special HSAIL operations is used to reserve space in the AQL queue for the packet.
+  * The packet contents are set up, including information about the actual dispatch, such as grid and work-group size, together with information from the code object about the kernel, such as segment sizes.
+  * The packet is assigned to packet processor by changing format field from INVALID to KERNEL_DISPATCH. Atomic memory operation must be used.
+  * A doorbell signal for the queue is signaled to notify packet processor.
+
+At some point, CP performs actual kernel execution:
+  * CP detects a packet on AQL queue.
+  * CP executes micro-code for setting up the GPU and wavefronts for a kernel dispatch.
+  * CP ensures that when the a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up as required by the machine code. See ["Initial kernel register state"](#initial_register_state) for more information.
   * The prolog of the kernel machine code, described in section 2.9.7, sets up the machine state as necessary before continuing executing the machine code that corresponds to the HSAIL of the kernel.
-  * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0. The completion signal size must match the machine model address size of the process.
+  * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0.
 
 <a name="initial_register_state"></a>
 #### Initial kernel register state
@@ -92,17 +99,36 @@ The following table defines VGPR registers that can be enabled and their order.
 | --- | --- | --- | --- |
 | First | 1 | Work-Item Id X (Always initialized) | 32 bit work item id in X dimension of work-group for wavefront lane. 
 | then | 1 | Work-Item Id Y (enable\_vgpr\_workitem\_id \> 0) | 32 bit work item id in Y dimension of work-group for wavefront lane. |
-| then | 1 | Work-Item Id Z (enable\_vgpr\_workitem\_id \> 1) | 32 bit work item id in Z dimension of work-group for wavefront lane. | 
+| then | 1 | Work-Item Id Z (enable\_vgpr\_workitem\_id \> 1) | 32 bit work item id in Z dimension of work-group for wavefront lane. |
+
+#### Kernel prolog code
+
+For certain features, kernel is expected to perform initialization actions, normally done in kernel prologue. This is only needed if kernel uses those features.
+
+##### Global/Readonly/Kernarg segments
+
+Global segment can be accessed either using flat or buffer operations. Buffer operations cannot be used for large machine model for GFX7 and later as V# support for 64 bit addressing is not available.
+
+If buffer operations are used then the Global Buffer used to access Global/Readonly/Kernarg (combined) segments using a segment address is not passed into the kernel code by CP since its base address is always 0. The prolog code initializes 4 SGPRs with a V# that has the following properties, and then uses that in the buffer instructions:
+  * base address of 0
+  * no swizzle
+  * ATC: 1 if IOMMU present (such as APU) 
+  * MTYPE set to support memory coherence specified in amd_kernel_code_t.global_memory_coherence
+
+If buffer operations are used to access Kernarg segment, Kernarg address must be added. It is available in dispatch packet (kernarg_address field) or as Kernarg Segment Ptr SGPR. Alternatively, scalar loads can be used if the kernarg offset is uniform, as the kernarg segment is constant for the duration of the kernel dispatch execution.
 
 <a name="flat_scratch"></a>
 #### Flat scratch
 
-The value of Flat Scratch Init sgpr register (see [Initial kernel register state](#initial_register_state)) is used to initialize FLAT_SCRATCH register pair (SGPRn-3/SGPRn-4):
+If kernel may use flat operations to access scratch memory, the prolog code must set up FLAT_SCRATCH register pair (FLAT_SCRATCH_LO/FLAT_SCRATCH_HI or SGPRn-4/SGPRn-3).
 
-For GFX7/GFX8:
-  * The first SGPR is a 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t. scratch\_backing\_memory\_location. This is the same offset used in computing the Scratch Segment Buffer base address. The value of Scratch Wave Offset must be added by the kernel machine code and moved to SGPRn-4 for use as the FLAT SCRATCH BASE in flat memory instructions.
-  * The second SGPR is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. The kernel code must move to SGPRn-3 for use as the FLAT SCRATCH SIZE in flat memory instructions. Having CP load it once avoids loading it at the beginning of every wavefront.
+For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgpr registers (see [Initial kernel register state](#initial_register_state)):
+  * Flat Scratch Init is a 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and moved to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
+  * The second SGPR is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
 
+#### M0 register
+
+M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
 
 ### Entity definitions
 
@@ -259,7 +285,7 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | AMD\_FLOAT\_ROUND\_MODE\_MINUS\_INFINITY | 2 | Round Toward -infinity |
 | AMD\_FLOAT\_ROUND\_MODE\_ZERO | 3 | Round Toward 0 |
 
-#### Queues
+#### AMD Queue
 
 ##### HSA AQL Queue Object (hsa_queue_t)
 
@@ -291,7 +317,7 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 | 2048 | | | Total size 256 bytes. |
 
 #### Signals
-
+##### Signal Overview
 Signal handle is 8 bytes. AMD signal handle is a pointer to AMD Signal Object (amd_signal_t).
 
 The following operations are defined on HSA Signals:
@@ -309,8 +335,7 @@ The following operations are defined on HSA Signals:
     * These happen immediately and atomically
     * Acquire-Release semantics on the signal value
 
-<a name="abcd"></a>
-##### Signal Kind (amd_signal_kind_t)
+##### Signal Kind amd_signal_kind_t
 
 | **ID** | **Name** | **Description** |
 | --- | --- | --- |
@@ -319,24 +344,24 @@ The following operations are defined on HSA Signals:
 | -1 | AMD_SIGNAL_KIND_DOORBELL | Doorbell signal with hardware support | 
 | -2 | AMD_SIGNAL_KIND_LEGACY_DOORBELL | Doorbell signal with hardware support, legacy (GFX8) |
 
-##### Signal Object (amd_signal_t)
+##### Signal Object amd_signal_t
 
 An AMD Signal object must always be 64 byte aligned to ensure it cannot span a page boundary. This is required by CP microcode which optimizes access to the structure by only doing a single SUA (System Uniform Address) translation when accessing signal fields. This optimization is used in GFX8.
 
 | **Bits** | **Size** | **Name** | **Description** |
 | --- | --- | --- | --- |
-| 63:0 | 8 bytes | kind | Signal kind. Refer to [this](#abcd) |
-| 127:64 | 8 bytes | value | For AMD_SIGNAL_KIND_USER kind, the value is the signal payload value. In small machine model only the lower 32 bits is used, in large machine model all 64 bits are used. |
-| 127:64 | 8 bytes | legacy_hardware_doorbell_ptr | For AMD_SIGNAL_LEGACY_DOORBELL kind, the value is a pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
-| 127:64 | 8 bytes | hardware_doorbell_ptr | For AMD_SIGNAL_DOORBELL kind, the value is a pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
-| 191:128 | 8 bytes | event_mailbox_ptr | For event based notification, forwarded by KFD. |
-| 223:192 | 4 bytes | event_id | For event based notification, forwarded by KFD. | 
+| 63:0 | 8 bytes | kind | [Signal kind](#signal-kind-amd_signal_kind_t) |
+| 127:64 | 8 bytes | value | For AMD_SIGNAL_KIND_USER: signal payload value. In small machine model only the lower 32 bits is used, in large machine model all 64 bits are used. |
+| 127:64 | 8 bytes | legacy_hardware_doorbell_ptr | For AMD_SIGNAL_KIND_LEGACY_DOORBELL: pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
+| 127:64 | 8 bytes | hardware_doorbell_ptr | For AMD_SIGNAL_KIND_DOORBELL: pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
+| 191:128 | 8 bytes | event_mailbox_ptr | For AMD_SIGNAL_KIND_USER: mailbox address for event notification. |
+| 223:192 | 4 bytes | event_id | For AMD_SIGNAL_KIND_USER: event id for event notification. |
 | 255:224 | 4 bytes | | Padding. Must be 0. |
 | 319:256 | 8 bytes | start_ts | Start of the AQL packet timestamp, when profiled. |
 | 383:320 | 8 bytes | end_ts | End of the AQL packet timestamp, when profiled. |
-| 448:384 | 8 bytes | queue\_ptr | For AMD\_SIGNAL\_KIND\_\*DOORBELL, the address of the associated amd\_queue\_t. If the kind is not AMD_SIGNAL_KIND\_*DOORBELL then reserved and must be 0. This ensures union is 64 bits even for 32 bit applications that use 32-bit pointers. | 
+| 448:384 | 8 bytes | queue\_ptr | For AMD\_SIGNAL\_KIND\_\*DOORBELL: the address of the associated amd\_queue\_t, otherwise reserved and must be 0. |
 | 511:448 | 8 bytes | | Padding to 64 byte size. Must be 0. |
-| 512 | 64 bytes | | Total size |
+| 512 | | | Total size 64 bytes |
 
 ##### Signal kernel machine code
 
@@ -392,3 +417,8 @@ Notes:
   * [AMD ISA Documents](http://developer.amd.com/resources/documentation-articles/developer-guides-manuals/)
     * [AMD GCN3 Instruction Set Architecture (2015)](http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2013/07/AMD_GCN3_Instruction_Set_Architecture.pdf)
     * [AMD_Southern_Islands_Instruction_Set_Architecture](http://amd-dev.wpengine.netdna-cdn.com/wordpress/media/2013/07/AMD_Southern_Islands_Instruction_Set_Architecture1.pdf)
+  * [ROCR Runtime sources](https://github.com/RadeonOpenCompute/ROCR-Runtime)
+    * [amd_hsa_kernel_code.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_kernel_code.h)
+    * [amd_hsa_queue.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_queue.h)
+    * [amd_hsa_signal.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_signal.h)
+    * [amd_hsa_common.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_common.h)
