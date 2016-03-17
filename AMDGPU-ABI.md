@@ -10,25 +10,29 @@ Table of Contents
   * [Kernel dispatch](#kernel-dispatch)
   * [Initial kernel register state](#initial-kernel-register-state)
   * [Kernel prolog code](#kernel-prolog-code)
+  * [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
+  * [Scratch memory swizzling](#scratch-memory-swizzling)
   * [Flat scratch](#flat-scratch)
+  * [M0 Register](#m0-register)
+  * [Dynamic call stack](#dynamic-call-stack)
 * [Entity definitions](#entity-definitions)
-  * [Instruction set architecture (ISA)](#instruction-set-architecture-isa)
+  * [Instruction set architecture](#instruction-set-architecture)
   * [AMD Kernel Code](#amd-kernel-code)
     * [AMD Kernel Code Object amd_kernel_code_t](#amd-kernel-code-object-amd_kernel_code_t)
-    * [Compute shader program settings 1 (amd_compute_pgm_rsrc1_t)](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t)
-    * [Compute shader program settings 2 (amd_compute_pgm_rsrc2_t)](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
-    * [AMD Machine Kind (amd_machine_kind_t)](#amd-machine-kind-amd_machine_kind_t)
-    * [Float Round Mode](#float-round-mode)
+    * [Compute shader program settings 1 amd_compute_pgm_rsrc1_t](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t)
+    * [Compute shader program settings 2 amd_compute_pgm_rsrc2_t](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
+    * [AMD Machine Kind amd_machine_kind_t](#amd-machine-kind-amd_machine_kind_t)
+    * [Float Round Mode amd_float_round_mode_t](#float-round-mode-amd_float_round_mode_t)
+    * [Denorm Mode amd_float_denorm_mode_t](#denorm-mode-amd_float_denorm_mode_t)
   * [AMD Queue](#amd-queue)
      * [HSA AQL Queue Object hsa_queue_t](#hsa-aql-queue-object-hsa_queue_t)
      * [AMD AQL Queue Object amd_queue_t](#amd-aql-queue-object-amd_queue_t)
      * [Queue operations](#queue-operations)
   * [Signals](#signals)
-    * [Signal Overview](#signal-overview)
-    * [Signal Kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
-    * [Signal Object amd_signal_t](#signal-object-amd_signal_t)
+    * [Signals overview](#signals-overview)
+    * [Signal kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
+    * [Signal object amd_signal_t](#signal-object-amd_signal_t)
     * [Signal kernel machine code](#signal-kernel-machine-code)
-* [Terms and definitions](#terms-and-definitions)
 * [References](#references)
 
 ### Introduction
@@ -36,7 +40,9 @@ Table of Contents
 This specification defines the application binary interface (ABI) provided by the AMD implementation of the HSA runtime for AMD GPU architecture agents. The AMD GPU architecture is a family of GPU agents which differ in machine code encoding and functionality.
 
 ### Platform details
-#### Code Object, Executable and Loader
+#### Finalizer, Code Object, Executable and Loader
+
+Finalizer, Code Object, Executable and Loader are defined in "HSA Programmer Reference Manual Specification". AMD Code Object uses ELF format. In this document, Finalizer is any compiler producing code object, including kernel machine code.
 
 #### Kernel dispatch
 
@@ -56,11 +62,10 @@ A kernel dispatch is initiated with the following sequence defined in "HSA Syste
 At some point, CP performs actual kernel execution:
   * CP detects a packet on AQL queue.
   * CP executes micro-code for setting up the GPU and wavefronts for a kernel dispatch.
-  * CP ensures that when a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up based on flags in amd_kernel_code_t (see ["Initial kernel register state"](#initial_register_state)).
+  * CP ensures that when a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up based on flags in amd_kernel_code_t (see ["Initial kernel register state"](#initial-kernel-register-state)).
   * When a wavefront start executing the kernel machine code, the prolog (see ["Kernel prolog code"](#kernel-prolog-code)) sets up the machine state as necessary.
   * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0.
 
-<a name="initial_register_state"></a>
 #### Initial kernel register state
 
 Prior to start of every wavefront execution, CP/SPI sets up the register state based on enable\_sgpr\_\* and enable\_vgpr\_\* flags in amd_kernel_code_t object:
@@ -71,16 +76,18 @@ Prior to start of every wavefront execution, CP/SPI sets up the register state b
 
 SGPR register numbers used for enabled registers are dense starting at SGPR0: the first enabled register is SGPR0, the next enabled register is SGPR1 etc.; disabled registers do not have an SGPR number. Because of hardware constraints, the initial SGPRs comprise up to 16 User SRGPs that are set up by CP and apply to all waves of the grid. It is possible to specify more than 16 User SGPRs using the enable_sgpr_* bit fields, in which case only the first 16 are actually initialized. These are then immediately followed by the System SGPRs that are set up by ADC/SPI and can have different values for each wave of the grid dispatch.
 
+The number of enabled registers must match value in compute\_pgm\_rsrc2.user\_sgpr (the total count of SGPR user data registers enabled). *The enableGridWorkGroupCount\* is currently not implemented in CP and should always be 0.*
+
 The following table defines SGPR registers that can be enabled and their order.
 
 | **SGPR Order** | **Number of Registers** | **Name**  | **Description** |
 | --- | --- | --- | --- |
-| First | 4 | Private Segment Buffer (enable\_sgpr\_private\_segment\_buffer) | V\# that can be used, together with Scratch Wave Offset as an offset, to access the Private/Spill/Arg segments using a segment address. CP uses the value from amd\_queue\_t.scratch\_resource\_descriptor (see section 2.9.6.2). |
+| First | 4 | Private Segment Buffer (enable\_sgpr\_private\_segment\_buffer) | V\# that can be used, together with Scratch Wave Offset as an offset, to access the Private/Spill/Arg segments using a segment address. CP uses the value from amd\_queue\_t.scratch\_resource\_descriptor. |
 | then | 2 | Dispatch Ptr (enable\_sgpr\_dispatch\_ptr) | 64 bit address of AQL dispatch packet for kernel actually executing. |
 | then | 2 | Queue Ptr (enable\_sgpr\_queue\_ptr) | 64 bit address of amd\_queue\_t object for AQL queue on which the dispatch packet was queued. |
 | then | 2 | Kernarg Segment Ptr (enable\_sgpr\_kernarg\_segment\_ptr) | 64 bit address of Kernarg segment. This is directly copied from the kernarg\_address in the kernel dispatch packet. Having CP load it once avoids loading it at the beginning of every wavefront. |
 | then | 2 | Dispatch Id (enable\_sgpr\_dispatch\_id) | 64 bit Dispatch ID of the dispatch packet being executed. |
-| then | 2 | Flat Scratch Init (enable\_sgpr\_flat\_scratch\_init) | Value used for FLAT_SCRATCH register initialization. Refer to [Flat scratch](#flat_scratch) for more information. |
+| then | 2 | Flat Scratch Init (enable\_sgpr\_flat\_scratch\_init) | Value used for FLAT_SCRATCH register initialization. Refer to [Flat scratch](#flat-scratch) for more information. |
 | then | 1 | Private Segment Size (enable\_sgpr\_private\_segment\_size) | The 32 bit byte size of a single work-items scratch memory allocation. This is the value from the kernel dispatch packet Private Segment Byte Size rounded up by CP to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. Not used for GFX7/GFX8 since it is the same value as the second SGPR of Flat Scratch Init. |
 | then | 1 | Grid Work-Group Count X (enable\_sgpr\_grid\_workgroup\_count\_X) | 32 bit count of the number of work-groups in the X dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.x + workgroup\_size.x - 1) / workgroup\_size.x).
 | then | 1 | Grid Work-Group Count Y (enable\_sgpr\_grid\_workgroup\_count\_Y && less than 16 previous SGPRs) | 32 bit count of the number of work-groups in the Y dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.y + workgroup\_size.y - 1) / workgroupSize.y). Only initialized if \<16 previous SGPRs initialized. |
@@ -97,7 +104,7 @@ The following table defines VGPR registers that can be enabled and their order.
 
 | **VGPR Order** | **Number of Registers** | **Name**  | **Description** |
 | --- | --- | --- | --- |
-| First | 1 | Work-Item Id X (Always initialized) | 32 bit work item id in X dimension of work-group for wavefront lane. 
+| First | 1 | Work-Item Id X (Always initialized) | 32 bit work item id in X dimension of work-group for wavefront lane. |
 | then | 1 | Work-Item Id Y (enable\_vgpr\_workitem\_id \> 0) | 32 bit work item id in Y dimension of work-group for wavefront lane. |
 | then | 1 | Work-Item Id Z (enable\_vgpr\_workitem\_id \> 1) | 32 bit work item id in Z dimension of work-group for wavefront lane. |
 
@@ -112,28 +119,38 @@ Global segment can be accessed either using flat or buffer operations. Buffer op
 If buffer operations are used then the Global Buffer used to access Global/Readonly/Kernarg (combined) segments using a segment address is not passed into the kernel code by CP since its base address is always 0. The prolog code initializes 4 SGPRs with a V# that has the following properties, and then uses that in the buffer instructions:
   * base address of 0
   * no swizzle
-  * ATC: 1 if IOMMU present (such as APU) 
+  * ATC: 1 if IOMMU present (such as APU)
   * MTYPE set to support memory coherence specified in amd_kernel_code_t.global_memory_coherence
 
 If buffer operations are used to access Kernarg segment, Kernarg address must be added. It is available in dispatch packet (kernarg_address field) or as Kernarg Segment Ptr SGPR. Alternatively, scalar loads can be used if the kernarg offset is uniform, as the kernarg segment is constant for the duration of the kernel dispatch execution.
 
-<a name="flat_scratch"></a>
 #### Flat scratch
 
 If kernel may use flat operations to access scratch memory, the prolog code must set up FLAT_SCRATCH register pair (FLAT_SCRATCH_LO/FLAT_SCRATCH_HI or SGPRn-4/SGPRn-3).
 
-For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgpr registers (see [Initial kernel register state](#initial_register_state)):
-  * Flat Scratch Init is a 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and moved to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
-  * The second SGPR is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
+For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgpr registers (see [Initial kernel register state](#initial-kernel-register-state)):
+  * The low word of Flat Scratch Init is 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and moved to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
+  * The second word of Flat Scratch Init is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
 
 #### M0 register
 
 M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
 
+#### Scratch memory swizzling
+
+Scratch memory may be used for private/spill/stack segment. Hardware will interleave (swizzle) scratch accesses of each lane of a wavefront by interleave (swizzle) element size to ensure each work-item gets a distinct memory location. Interleave size must be 2, 4, 8 or 16. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE).
+
+For GFX8 and earlier, all load and store operations done to scratch buffer must not exceed this size. For example, if the element size is 4 (32-bits or dword) and a 64-bit value must be loaded, it must be split into two 32-bit loads. This ensures that the interleaving will get the work-item specific dword for both halves of the 64-bit value. If it just did a 64-bit load then it would get one dword which belonged to its own work-item, but the second dword would belong to the adjacent lane work-item since the interleaving is in dwords.
+
+AMD HSA Runtime Finalizer uses value 4.
+
+#### Dynamic call stack
+
+In certain cases, Finalizer cannot compute the total private segment size at compile time. This can happen if calls are implemented using a call stack and recursion, alloca or calls to indirect functions are present. In this case, workitem\_private\_segment\_byte\_size field in code object only specifies the statically known private segment size. When performing actual kernel dispatch, private_segment_size_bytes field in dispatch packet will contain static private segment size plus additional space for the call stack.
+
 ### Entity definitions
 
-#### Instruction set architecture (ISA)
-<a name="isa_table"></a>
+#### Instruction set architecture
 
 AMDGPU ISA specifies instruction set architecture and capabilities used by machine code. It consists of several fields:
   * Vendor ("AMD")
@@ -161,37 +178,37 @@ AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a
 
 | **Bits** | **Size** | **Field Name** | **Description** |
 | --- | --- | --- | --- |
-| 31:0 | 4 bytes | amd\_code\_version\_major | The AMD major version of this amd\_kernel\_code\_t struct. Must be the value AMD\_KERNEL\_CODE\_VERSION\_MAJOR. This version must be 1. Major versions are not backwards compatible. |
-| 63:32 | 4 bytes | amd\_code\_version\_minor | The AMD minor version of this amd\_kernel\_code\_t struct. Must be the value AMD\_CODE\_VERSION\_MINOR. This version must be 1. Minor versions with the same major version must be backward compatible. |
-| 79:64 | 2 bytes | amd\_machine\_kind | [Machine kind](#amd_machine_kind_table) of this amd\_kernel\_code\_t. |
-| 95:80 | 2 bytes | amd\_machine\_version\_major | [Instruction set architecture](#isa_table): major |
-| 111:96 | 2 bytes | amd\_machine\_version\_minor | [Instruction set architecture](#isa_table): minor |
-| 127:112 | 2 bytes | amd\_machine\_version\_stepping | [Instruction set architecture](#isa_table): stepping |
+| 31:0 | 4 bytes | amd\_code\_version\_major | The AMD major version. Must be the value AMD\_KERNEL\_CODE\_VERSION\_MAJOR. Major versions are not backwards compatible. |
+| 63:32 | 4 bytes | amd\_code\_version\_minor | The AMD minor version. Must be the value AMD\_CODE\_VERSION\_MINOR.  Minor versions with the same major version must be backward compatible. |
+| 79:64 | 2 bytes | amd\_machine\_kind | [Machine kind](#amd-machine-kind-amd_machine_kind_t). |
+| 95:80 | 2 bytes | amd\_machine\_version\_major | [Instruction set architecture](#instruction-set-architecture): major |
+| 111:96 | 2 bytes | amd\_machine\_version\_minor | [Instruction set architecture](#instruction-set-architecture): minor |
+| 127:112 | 2 bytes | amd\_machine\_version\_stepping | [Instruction set architecture](#instruction-set-architecture): stepping |
 | 191:128 | 8 bytes | kernel\_code\_entry\_byte\_offset | Byte offset (possibly negative) from start of amd\_kernel\_code\_t object to kernel's entry point instruction. The actual code for the kernel is required to be 256 byte aligned to match hardware requirements (SQ cache line is 16; entry point config register only holds bits 47:8 of the address). The Finalizer should endeavor to allocate all kernel machine code in contiguous memory pages so that a device pre-fetcher will tend to only pre-fetch Kernel Code objects, improving cache performance. The AMD HA Runtime Finalizer generates position independent code (PIC) to avoid using relocation records and give runtime more flexibility in copying code to discrete GPU device memory. |
 | 255:192 | 8 bytes | kernel\_code\_prefetch\_byte\_offset | Range of bytes to consider prefetching expressed as a signed offset and unsigned size. The (possibly negative) offset is from the start of amd\_kernel\_code\_t object. Set both to 0 if no prefetch information is available. |
 | 319:256 | 8 bytes | kernel\_code\_prefetch\_byte\_size | |
 | 383:320 | 8 bytes | max\_scratch\_backing\_memory\_byte\_size | Number of bytes of scratch backing memory required for full occupancy of target chip. This takes into account the number of bytes of scratch per work-item, the wavefront size, the maximum number of wavefronts per CU, and the number of CUs. This is an upper limit on scratch. If the grid being dispatched is small it may only need less than this. If the kernel uses no scratch, or the Finalizer has not computed this value, it must be 0. |
-| 415:384 | 4 bytes | compute\_pgm\_rsrc1 | [Compute Shader (CS) program settings 1 (amd_compute_pgm_rsrc1)](#amd_compute_pgm_rsrc1) |
-| 447:416 | 4 bytes | compute\_pgm\_rsrc2 | [Compute Shader (CS) program settings 2 (amd_compute_pgm_rsrc2)](#amd_compute_pgm_rsrc2) |
-| 448 | 1 bit | enable\_sgpr\_private\_segment\_buffer | Enable the setup of the SGPR user data registers (see section 2.9.8). The total number of SGPR user data registers requested must not exceed 16. Any requests beyond 16 will be ignored. Number of bits set must not exceed 16 and match value in compute\_pgm\_rsrc2.user\_sgpr (the total count of SGPR user data registers enabled). *The enableGridWorkGroupCount\* is not implemented in CP and should always be 0.* |
-| 449 | 1 bit | enable\_sgpr\_dispatch\_ptr | |
-| 450 | 1 bit | enable\_sgpr\_queue\_ptr | |
-| 451 | 1 bit | enable\_sgpr\_kernarg\_segment\_ptr | |
-| 452 | 1 bit | enable\_sgpr\_dispatch\_id | |
-| 453 | 1 bit | enable\_sgpr\_flat\_scratch\_init | |
-| 454 | 1 bit | enable\_sgpr\_private\_segment\_size | |
-| 455 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_X | |
-| 456 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_Y | |
-| 457 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_Z | |
-| 463:458 | 6 bits | Reserved. Must be 0. |
+| 415:384 | 4 bytes | compute\_pgm\_rsrc1 | [Compute Shader (CS) program settings 1 amd_compute_pgm_rsrc1](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t) |
+| 447:416 | 4 bytes | compute\_pgm\_rsrc2 | [Compute Shader (CS) program settings 2 amd_compute_pgm_rsrc2](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t) |
+| 448 | 1 bit | enable\_sgpr\_private\_segment\_buffer | Enable the setup of [Private Segment Buffer](#initial-kernel-register-state) |
+| 449 | 1 bit | enable\_sgpr\_dispatch\_ptr | Enable the setup of [Dispatch Ptr](#initial-kernel-register-state) |
+| 450 | 1 bit | enable\_sgpr\_queue\_ptr | Enable the setup of [Queue Ptr](#initial-kernel-register-state) |
+| 451 | 1 bit | enable\_sgpr\_kernarg\_segment\_ptr | Enable the setup of [Kernarg Segment Ptr](#initial-kernel-register-state) |
+| 452 | 1 bit | enable\_sgpr\_dispatch\_id | Enable the setup of [Dispatch Id](#initial-kernel-register-state) |
+| 453 | 1 bit | enable\_sgpr\_flat\_scratch\_init | Enable the setup of [Flat Scratch Init](#initial-kernel-register-state) |
+| 454 | 1 bit | enable\_sgpr\_private\_segment\_size | Enable the setup of [Private Segment Size](#initial-kernel-register-state) |
+| 455 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_X | Enable the setup of [Grid Work-Group Count X](#initial-kernel-register-state) |
+| 456 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_Y | Enable the setup of [Grid Work-Group Count Y](#initial-kernel-register-state) |
+| 457 | 1 bit | enable\_sgpr\_grid\_workgroup\_count\_Z | Enable the setup of [Grid Work-Group Count Z](#initial-kernel-register-state) |
+| 463:458 | 6 bits | | Reserved. Must be 0. |
 | 464 | 1 bit | enable\_ordered\_append\_gds | Control wave ID base counter for GDS ordered-append. Used to set COMPUTE\_DISPATCH\_INITIATOR.ORDERED\_APPEND\_ENBL. |
-| 466:465 | 2 bits | private\_element\_size  | The interleave (swizzle) element size in bytes required by the machine code for private memory. This must be 2, 4, 8 or 16. Values are defined by Table 36. The AMD HSA Runtime Finalizer always uses 4. Hardware will interleave the memory requests of each lane of a wavefront by this element size to ensure each work-item gets a distinct memory location. For GFX8 and earlier, the finalizer ensures that all load and store operations done to private memory using the scratch buffer do not exceed this size. For example, if the element size is 4 (32-bits or dword) and a 64-bit value must be loaded, the finalizer will generate two 32-bit loads. This ensures that the interleaving will get the work-item specific dword for both halves of the 64-bit value. If it just did a64-bit load then it would get one dword which belonged to its own work-item, but the second dword would belong to the adjacent lane work-item since the interleaving is in dwords. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE). |
+| 466:465 | 2 bits | private\_element\_size  | [Interleave (swizzle) element size](#scratch-memory-swizzling) in bytes. |
 | 467 | 1 bit | is\_ptr64 | 1 if global memory addresses are 64 bits, otherwise 0. Must match SH\_MEM\_CONFIG.PTR32 (GFX7), SH\_MEM\_CONFIG.ADDRESS\_MODE (GFX8+). |
-| 468 | 1 bit | is\_dynamic\_call\_stack | Indicates if the generated machine code is using a dynamically sized call stack. This can happen if calls are implemented using a call stack andrecursion, alloca or calls to indirect functions are present. In these cases the Finalizer cannot compute the total private segment size at compile time. In this case the workitem\_private\_segment\_byte\_size only specifies the statically know private segment size, and additional space must be added for the call stack. | 
+| 468 | 1 bit | is\_dynamic\_call\_stack | Indicates if the generated machine code is using [dynamic call stack](#dynamic-call-stack). |
 | 469 | 1 bit | is\_debug\_enabled | Indicates if the generated machine code includes code required by the debugger. |
 | 470 | 1 bit | is\_xnack\_enabled | Indicates if the generated machine code uses conservative XNACK register allocation. |
 | 479:471 | 9 bits | reserved | Reserved. Must be 0. |
-| 511:480 | 4 bytes | workitem\_private\_segment\_byte\_size | The amount of memory required for the combined private, spill and arg segments for a work-item in bytes. If is\_dynamic\_callstack is 1 then additional space must be added to this value for the call stack. |
+| 511:480 | 4 bytes | workitem\_private\_segment\_byte\_size | The amount of memory required for the static combined private, spill and arg segments for a work-item in bytes. |
 | 543:512 | 4 bytes | workgroup\_group\_segment\_byte\_size | The amount of group segment memory required by a work-group in bytes. This does not include any dynamically allocated group segment memory that may be added when the kernel is dispatched. |
 | 575:544 | 4 bytes  | gds\_segment\_byte\_size | Number of byte of GDS required by kernel dispatch. Must be 0 if not using GDS. |
 | 639:576 | 8 bytes | kernarg\_segment\_byte\_size | The size in bytes of the kernarg segment that holds the values of the arguments to the kernel. This could be used by CP to prefetch the kernarg segment pointed to by the kernel dispatch packet. |
@@ -199,23 +216,23 @@ AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a
 | 687:672 | 2 bytes | wavefront\_sgpr\_count | Number of scalar registers used by a wavefront. This includes the special SGPRs for VCC, Flat Scratch (Base, Size) and XNACK (for GFX8 (VI)+). It does not include the 16 SGPR added if a trap handler is enabled. Must match compute\_pgm\_rsrc1.sgprs used to set COMPUTE\_PGM\_RSRC1.SGPRS. |
 | 703:688 | 2 bytes | workitem\_vgpr\_count | Number of vector registers used by each work-item. Must match compute\_pgm\_rsrc1.vgprs used to set COMPUTE\_PGM\_RSRC1.VGPRS. |
 | 719:704 | 2 bytes | reserved\_vgpr\_first | If reserved\_vgpr\_count is 0 then must be 0. Otherwise, this is the first fixed VGPR number reserved. |
-| 735:720 | 2 bytes | reserved\_vgpr\_count | The number of consecutive VGPRs reserved by the client. If is\_debug\_supported then this count includes VGPRs reserved for debugger use. | 
+| 735:720 | 2 bytes | reserved\_vgpr\_count | The number of consecutive VGPRs reserved by the client. If is\_debug\_supported then this count includes VGPRs reserved for debugger use. |
 | 751:736 | 2 bytes | reserved\_sgpr\_first | If reserved\_sgpr\_count is 0 then must be 0. Otherwise, this is the first fixed SGPR number reserved. |
 | 767:752 | 2 bytes | reserved\_sgpr\_count | The number of consecutive SGPRs reserved by the client. If is\_debug\_supported then this count includes SGPRs reserved for debugger use. |
-| 783:768 | 2 bytes | debug\_wavefront\_private\_segment\_offset\_sgpr | If is\_debug\_supported is 0 then must be 0. Otherwise, this is the fixed SGPR number used to hold the wave scratch offset for the entire kernel execution, or uint16\_t(-1) if the register is not used or not known. | 
+| 783:768 | 2 bytes | debug\_wavefront\_private\_segment\_offset\_sgpr | If is\_debug\_supported is 0 then must be 0. Otherwise, this is the fixed SGPR number used to hold the wave scratch offset for the entire kernel execution, or uint16\_t(-1) if the register is not used or not known. |
 | 799:784 | 2 bytes | debug\_private\_segment\_buffer\_sgpr | If is\_debug\_supported is 0 then must be 0. Otherwise, this is the fixed SGPR number of the first of 4 SGPRs used to hold the scratch V\# used for the entire kernel execution, or uint16\_t(-1) if the registers are not used or not known. |
 | 807:800 | 1 byte | kernarg\_segment\_alignment | The maximum byte alignment of variables used by the kernel in the specified memory segment. Expressed as a power of two as defined in Table 37. Must be at least HSA\_POWERTWO\_16. |
 | 815:808 | 1 byte | group\_segment\_alignment |
-| 823:816 | 1 byte | private\_segment\_alignment | 
+| 823:816 | 1 byte | private\_segment\_alignment |
 | 831:824 | 1 byte | wavefront\_size | Wavefront size expressed as a power of two. Must be a power of 2 in range 1..256 inclusive. Used to support runtime query that obtains wavefront size, which may be used by application to allocated dynamic group memory and set the dispatch work-group size. |
 | 863:832 | 4 bytes | call\_convention | Call convention used to produce the machine code for the kernel. This specifies the function call convention ABI used for indirect functions. If the application specified that the Finalizer should select the call convention, then this value must be the value selected, not the -1 specified to the Finalizer. If the code object does not support indirect functions, then the value must be 0xffffffff. |
-| 960:864 | 12 bytes | Reserved. Must be 0. |
+| 960:864 | 12 bytes | | Reserved. Must be 0. |
 | 1023:960 | 8 bytes | runtime\_loader\_kernel\_symbol | A pointer to the loaded kernel symbol. This field must be 0 when amd\_kernel\_code\_t is created. The HSA Runtime loader initializes this field once the code object is loaded to reference the loader symbol for the kernel. This field is used to allow the debugger to locate the debug information for the kernel. The definition of the loaded kernel symbol is located in hsa/runtime/executable.hpp. |
 | 2047:1024 | 128 bytes | control\_directive | Control directives for this kernel used in generating the machine code. The values are intended to reflect the constraints that the code actually requires to correctly execute, not the values that were actually specified at finalize time. If the finalizer chooses to ignore a control directive, and not generate constrained code, then the control directive should not be marked as enabled. |
 | 2048 | | | Total size 256 bytes. |
 
-<a name="amd_compute_pgm_rsrc1"></a>
-##### Compute shader program settings 1 (amd\_compute\_pgm\_rsrc1\_t)
+##### Compute shader program settings 1 amd_compute_pgm_rsrc1_t
+
 The fields of amd_compute_pgm_rsrc1 are used by CP to set up COMPUTE\_PGM\_RSRC1.
 
 | **Bits** | **Size** | **Field Name** | **Description** |
@@ -223,21 +240,21 @@ The fields of amd_compute_pgm_rsrc1 are used by CP to set up COMPUTE\_PGM\_RSRC1
 | 5:0 | 6 bits | granulated\_workitem\_vgpr\_count | Number of vector registers used by each work-item, granularity is device specific. |
 | 9:6 | 4 bits | granulated\_wavefront\_sgpr\_count | Number of scalar registers used by a wavefront, granularity is device specific. This includes the special SGPRs for VCC, Flat Scratch (Base, and Size) and XNACK (for GFX8 (VI)+). It does not include the 16 SGPR added if a trap handler is enabled. |
 | 11:10 | 2 bits | priority | Drives spi\_priority in spi\_sq newWave cmd. |
-| 13:12 | 2 bits | float\_mode\_round\_32 | Wavefront initial float rounding mode for single precision floats (32 bit). Refer to [this table](#amd_float_round_mode_table). |
-| 15:14 | 2 bits | float\_mode\_round\_16\_64 | Wavefront initial float rounding mode for double/half precision floats (64/16 bit). Refer to [this table](#amd_float_round_mode_table). |
-| 17:16 | 2 bits | float\_mode\_denorm\_32 | |
-| 19:18 | 2 bits | float\_mode\_denorm\_16\_64 | 
-| 20 | 1 bit | priv | Drives priv in spi\_sq newWave cmd. This field is set to 0 by the Finalizer and must be filled in by CP. | 
+| 13:12 | 2 bits | float\_mode\_round\_32 | Wavefront initial [float round mode](#float-round-mode-amd_float_round_mode_t) for single precision floats (32 bit). |
+| 15:14 | 2 bits | float\_mode\_round\_16\_64 | Wavefront initial [float round mode](#float-round-mode-amd_float_round_mode_t) for double/half precision floats (64/16 bit). |
+| 17:16 | 2 bits | float\_mode\_denorm\_32 | Wavefront initial [denorm mode](#denorm-mode-amd_float_denorm_mode_t) for single precision floats (32 bit). |
+| 19:18 | 2 bits | float\_mode\_denorm\_16\_64 | Wavefront initial [denorm  mode](#denorm-mode-amd_float_denorm_mode_t) for double/half precision floats (64/16 bit). |
+| 20 | 1 bit | priv | Drives priv in spi\_sq newWave cmd. This field is set to 0 by the Finalizer and must be filled in by CP. |
 | 21 | 1 bit | enable\_dx10\_clamp | Wavefront starts execution with DX10 clamp mode enabled. Used by the vector ALU to force DX-10 style treatment of NaN's (when set, clamp NaN to zero, otherwise pass NaN through). Used by CP to set up COMPUTE\_PGM\_RSRC1.DX10\_CLAMP. |
-| 22 | 1 bit | debug\_mode |Drives debug in spi\_sq newWave cmd. This field is set to 0 by the Finalizer and must be filled in by CP. |
+| 22 | 1 bit | debug\_mode | Drives debug in spi\_sq newWave cmd. This field is set to 0 by the Finalizer and must be filled in by CP. |
 | 23 | 1 bit | enable\_ieee\_mode | Wavefront starts execution with IEEE mode enabled. Floating point opcodes that support exception flag gathering will quiet and propagate signaling-NaN inputs per IEEE 754-2008. Min\_dx10 and max\_dx10 become IEEE 754-2008 compliant due to signaling-NaN propagation and quieting. Used by CP to set up COMPUTE\_PGM\_RSRC1.IEEE\_MODE. |
 | 24 | 1 bit | bulky | Only one such work-group is allowed to be active on any given Compute Unit. Only one such work-group is allowed to be active on any given CU. This field is set to 0 by the Finalizer and must be filled in by CP.
-| 25 | 1 bit | cdbg\_user | This field is set to 0 by the Finalizer and must be filled in by CP. | 
+| 25 | 1 bit | cdbg\_user | This field is set to 0 by the Finalizer and must be filled in by CP. |
 | 31:26 | 6 bits | reserved | Reserved. Must be 0. |
 | 32 | | | Total size 4 bytes. |
 
-<a name="amd_compute_pgm_rsrc2"></a>
-##### Compute shader program settings 2 (amd\_compute\_pgm\_rsrc2\_t)
+##### Compute shader program settings 2 amd_compute_pgm_rsrc2_t
+
 The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2.
 
 | **Bits** | **Size** | **Field Name** | **Description** |
@@ -245,38 +262,32 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | 0 | 1 bit | enable\_sgpr\_private\_segment\_wave\_byte\_offset | Enable the setup of the SGPR wave scratch offset system register (see 2.9.8). Used by CP to set up COMPUTE\_PGM\_RSRC2.SCRATCH\_EN. |
 | 5:1 | 5 bits | user\_sgpr\_count | The total number of SGPR user data registers requested. This number must match the number of user data registers enabled. |
 | 6 | 1 bit | enable\_trap\_handler | Code contains a TRAP instruction which requires a trap hander to be enabled. Used by CP to set up COMPUTE\_PGM\_RSRC2.TRAP\_PRESENT. Note that CP shuld set COMPUTE\_PGM\_RSRC2.TRAP\_PRESENT if either this field is 1 or if amd\_queue.enable\_trap\_handler is 1 for the queue executing the kernel dispatch. |
-| 7 | 1 bit | enable\_sgpr\_workgroup\_id\_x | Enable the setup of the SGPR system registers (see section 2.9.8). Used by CP to set up COMPUTE\_PGM\_RSRC2.TGID\_X\_EN, TGID\_Y\_EN, TGID\_Z\_EN, TG\_SIZE\_EN, respectively. |
-| 8 | 1 bit | enable\_sgpr\_workgroup\_id\_y | |
-| 9 | 1 bit | enable\_sgpr\_workgroup\_id\_z | |
-| 10 | 1 bit | enable\_sgpr\_workgroup\_info | 
-| 12:11 | 2 bits | enable\_vgpr\_workitem\_id | Enable the setup of the VGPR system registers used for the work-item ID. Table 40 defines the values. Used by CP to set up COMPUTE\_PGM\_RSRC2.TIDIG\_CMP\_CNT. |
+| 7 | 1 bit | enable\_sgpr\_workgroup\_id\_x | Enable the setup of [Work-Group Id X](#initial-kernel-register-state). Also used by CP to set up COMPUTE\_PGM\_RSRC2.TGID\_X\_EN. |
+| 8 | 1 bit | enable\_sgpr\_workgroup\_id\_y | Enable the setup of [Work-Group Id Y](#initial-kernel-register-state). Also used by CP to set up COMPUTE\_PGM\_RSRC2.TGID\_Y\_EN, TGID\_Z\_EN.|
+| 9 | 1 bit | enable\_sgpr\_workgroup\_id\_z | Enable the setup of [Work-Group Id Z](#initial-kernel-register-state). Also used by CP to set up COMPUTE\_PGM\_RSRC2. TGID\_Z\_EN. |
+| 10 | 1 bit | enable\_sgpr\_workgroup\_info |  Enable the setup of [Work-Group Info](#initial-kernel-register-state). |
+| 12:11 | 2 bits | enable\_vgpr\_workitem\_id | Enable the setup of [Work-Item Id X, Y, Z](#initial-kernel-register-state). Also used by CP to set up COMPUTE\_PGM\_RSRC2.TIDIG\_CMP\_CNT. |
 | 13 | 1 bit | enable\_exception\_address\_watch | Wavefront starts execution with specified exceptions enabled. Used by CP to set up COMPUTE\_PGM\_RSRC2.EXCP\_EN\_MSB (composed from following bits). Address Watch - TC (L1) has witnessed a thread access an "address of interest". |
 | 14 | 1 bit | enable\_exception\_memory\_violation  | Memory Violation - a memory violation has occurred for this wave from L1 or LDS (write-to-read-only-memory, mis-aligned atomic, LDS address out of range, illegal address, etc.). |
 | 23:15 | 9 bits | granulated\_lds\_size | Amount of group segment (LDS) to allocate for each work-group. Granularity is device specific. CP should use the rounded value from the dispatch packet, not this value, as the dispatch may contain dynamically allocated group segment memory. This field is set to 0 by the Finalizer and CP will write directly to COMPUTE\_PGM\_RSRC2.LDS\_SIZE. |
-| 24 | 1 bit | enable\_exception\_ieee\_754\_fp\_invalid\_operation | Wavefront starts execution with specified exceptions enabled. Used by CP to set up COMPUTE\_PGM\_RSRC2.EXCP\_EN (set from bits 0..6), EXCP\_EN\_MSB (set from bits 7..8). IEEE 754 FP Invalid Operation |
-| 25 | 1 bit | enable\_exception\_fp\_denormal\_source | FP Denormal one or more input operands is a denormal number |
-| 26 | 1 bit | enable\_exception\_ieee\_754\_fp\_division\_by\_zero | IEEE 754 FP Division by Zero |
-| 27 | 1 bit | enable\_exception\_ieee\_754\_fp\_overflow | IEEE 754 FP FP Overflow |
-| 28 | 1 bit | enable\_exception\_ieee\_754\_fp\_underflow | IEEE 754 FP Underflow |
-| 29 | 1 bit | enable\_exception\_ieee\_754\_fp\_inexact | IEEE 754 FP Inexact |
-| 30 | 1 bit | enable\_exception\_int\_divide\_by\_zero | Integer Division by Zero (rcp\_iflag\_f32 instruction only) |
-| 31 | 1 bit | | Reserved. Must be 0. | 
+| 24 | 1 bit | enable\_exception\_ieee\_754\_fp\_invalid\_operation | Enable IEEE 754 FP Invalid Operation exception at start of wavefront execution. enable_exception flags are used by CP to set up COMPUTE\_PGM\_RSRC2.EXCP\_EN (set from bits 0..6), EXCP\_EN\_MSB (set from bits 7..8). |
+| 25 | 1 bit | enable\_exception\_fp\_denormal\_source | Enable FP Denormal exception at start of wavefront execution. |
+| 26 | 1 bit | enable\_exception\_ieee\_754\_fp\_division\_by\_zero | Enable IEEE 754 FP Division by Zero exception at start of wavefront execution. |
+| 27 | 1 bit | enable\_exception\_ieee\_754\_fp\_overflow | Enable IEEE 754 FP FP Overflow exception at start of wavefront execution. |
+| 28 | 1 bit | enable\_exception\_ieee\_754\_fp\_underflow | Enable IEEE 754 FP Underflow exception at start of wavefront execution. |
+| 29 | 1 bit | enable\_exception\_ieee\_754\_fp\_inexact | Enable IEEE 754 FP Inexact exception at start of wavefront execution. |
+| 30 | 1 bit | enable\_exception\_int\_divide\_by\_zero | Enable Integer Division by Zero (rcp\_iflag\_f32 instruction only) exception at start of wavefront execution. |
+| 31 | 1 bit | | Reserved. Must be 0. |
 | 32 | | | Total size 4 bytes. |
 
-##### AMD Machine Kind (amd_machine_kind_t)
-
-<a name="amd_machine_kind_table">Table: AMD Machine Kind enumeration values</a>
+##### AMD Machine Kind amd_machine_kind_t
 
 | **Enumeration Name** | **Value** | **Description** |
 | --- | --- | --- |
 | AMD\_MACHINE\_KIND\_UNDEFINED | 0 | Machine kind is undefined. |
 | AMD\_MACHINE\_KIND\_AMDGPU | 1 | Machine kind is AMD GPU. Corresponds to AMD GPU ISA architecture of AMDGPU. |
 
-##### 
-
-##### Float Round Mode
-
-<a name="amd_float_round_mode_table">Table: AMD Floating Point Rounding Mode enumeration values</a>
+##### Float Round Mode amd_float_round_mode_t
 
 | **Enumeration Name** | **Value** | **Description** |
 | --- | --- | ---- |
@@ -284,6 +295,15 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | AMD\_FLOAT\_ROUND\_MODE\_PLUS\_INFINITY | 1 | Round Toward +infinity |
 | AMD\_FLOAT\_ROUND\_MODE\_MINUS\_INFINITY | 2 | Round Toward -infinity |
 | AMD\_FLOAT\_ROUND\_MODE\_ZERO | 3 | Round Toward 0 |
+
+##### Denorm Mode amd_float_denorm_mode_t
+
+| **Enumeration Name** | **Value** | **Description** |
+| --- | --- | ---- |
+| AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_SRC\_DST | 0 | Flush Source and Destination Denorms |
+| AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_DST | 1 | Flush Output Denorms |
+| AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_SRC | 2 | Flush Source Denorms |
+| AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_NONE | 3 | No Flush |
 
 #### AMD Queue
 
@@ -305,10 +325,10 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 | 447:320 | 16 bytes | | Unused. Allows hsa\_queue\_t to expand but still keeps write\_dispatch\_id, which is written by the producer (often the host CPU), in the same cache line. Must be 0. |
 | 511:448 | 8 bytes | write\_dispatch\_id | A 64-bit unsigned integer. On GFX8, specifies the Dispatch ID of the next AQL packet to be allocated by the application or user-level runtime. On GFX7, hsa\_queue.base\_address + ((write\_dispatch\_id % hsa\_queue.size) \* 64 /\* AQL packet size \*/) is the virtual addressfor the next AQL packet allocated. Initialized to 0 at queue creation time. Note: On pre-GFX8 (eg Kaveri), the write\_dispatch\_id is specified in dwords and must be divided by (AQL packet\_size of 64 / dword size of 4)=16 to obtain the HSA "packet-granularity" write offset. Therefore, hsa\_queue.base\_address + (((write\_dispatch\_id/16) % hsa\_queue.size) \* 64 /\* AQL packet size \*/) is the virtual address for the next AQL packet allocated. Finalizer and Runtime software is responsible for converting dword offsets to packet granularity. |
 | 512 | | | Start of cache line for fields accessed by kernel machine code isa |
-| 543:512 | 4 bytes | group\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit group segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 29b0}. For HSA32, the 32 bits of the 32 bit group segment flat address aperture. This is the same value as {SH\_MEM\_BASES:SHARED\_BASE[15:0], 16b0}. Used in kernel machine code to implement HSAIL stof\_group. |
-| 575:544 | 4 bytes | private\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 28b0, 1b1} For HSA32, the 32 bits of the 32 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:0], 16b0}. Used in kernel machine code to implement HSAIL stof\_private instruction.
-| 607:576 | 4 bytes | max\_cu\_id | The number of compute units 1 on the agent to which the queue is associated. Used in kernel machine code to implement HSAIL maxcuid instruction. |
-| 639:608 | 4 bytes | max\_wave\_id | The number of wavefronts 1 that can be executed on a single compute unit of the device to which the queue is associated. Used in kernel machine code to implement HSAIL maxwaveid instruction. |
+| 543:512 | 4 bytes | group\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit group segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 29b0}. For HSA32, the 32 bits of the 32 bit group segment flat address aperture. This is the same value as {SH\_MEM\_BASES:SHARED\_BASE[15:0], 16b0}. |
+| 575:544 | 4 bytes | private\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 28b0, 1b1} For HSA32, the 32 bits of the 32 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:0], 16b0}. |
+| 607:576 | 4 bytes | max\_cu\_id | The number of compute units 1 on the agent to which the queue is associated. |
+| 639:608 | 4 bytes | max\_wave\_id | The number of wavefronts 1 that can be executed on a single compute unit of the device to which the queue is associated. |
 | 703:640 | 8 bytes | max\_legacy\_doorbell\_dispatch\_id\_plus\_1 |Must be initialized to 0 at queue creation time. For queues attached to GFX8 and earlier hardware, it is necessary to prevent backwards doorbells in the software signal operation. This field is used to hold the maximum doorbell dispatch id [plus 1] signaled for the queue. The hardware will monitor this field, and not write\_dispatch\_id, on queue connect. The value written to this field is required to be made visible before writing to the queue's doorbell signal (referenced by hsa\_queue.doorbell\_signal) hardware location (referenced by hardware\_doorbell\_ptr or legacy\_hardware\_doorbell\_ptr). The value is always 64 bit, even in small machine model. |
 | 735:704 | 4 bytes | legacy\_doorbell\_lock | Must be initialized to 0 at queue creation time. For queues attached to GFX8 and earlier hardware, it is necessary to use a critical section to update the doorbell related fields of amd\_queue\_s.max\_legacy\_doorbell\_dispatch\_id\_plus\_1 and amd\_signal\_s.legacy\_hardware\_doorbell\_ptr. This field is initialized to 0, and set to 1 to lock the critical section. |
 | 1023:736 | 36 bytes | | Unused. Must be 0. If additional space is required for the fields accessed by the kernel isa, then this reserved space can be used, and space for an additional cache line(s) can also be added and not break backwards compatibility for CP micro code as the read\_dispatch\_id\_field\_base\_offset field below can be initialized with the correct offset to get to the read\_dispatch\_id field below. If the CP micro code fields need to be expanded that is possible as there are no fields after them. This allows both the kernel machine code fields and CP micro code accessed fields to expand in a backwards compatible way. |
@@ -318,7 +338,7 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 
 ##### Queue operations
 
-A queue has an associated set of high-level operations defined in "HSA Runtime Specification" (API functions in host code) and "HSA Programmer Reference Manual Specification" (HSAIL kernel code).
+A queue has an associated set of high-level operations defined in "HSA Runtime Specification" (API functions in host code) and "HSA Programmer Reference Manual Specification" (kernel code).
 
 The following is informal description of AMD implementation of queue operations (all use memory scope system, memory order applies):
   * Load Queue Write Index: Atomic load of read_dispatch_id field
@@ -329,34 +349,34 @@ The following is informal description of AMD implementation of queue operations 
   * Compare-And-Swap Queue Write Index: Atomic CAS of write_dispatch_id field
 
 #### Signals
-##### Signal Overview
+##### Signals overview
 Signal handle is 8 bytes. AMD signal handle is a pointer to AMD Signal Object (amd_signal_t).
 
 The following operations are defined on HSA Signals:
   * Signal Load
     * Read the of the current value of the signal
-    * Acquire semantics on the signal value
+    * Optional acquire semantics on the signal value
   * Signal Wait on a condition
     * Blocks the thread until the requested condition on the signal value is observed
     * Condition: equals, not-equals, greater, greater-equals, lesser, lesser-equals
-    * Acquire semantics on the signal value
+    * Optional acquire semantics on the signal value
     * Returns the value of the signal that caused it to wake
   * Signal Store
-    * Release semantics on the signal value
+    * Optional release semantics on the signal value
   * Signal Read-Modify-Write Atomics (add, sub, increment, decrement, min, max, and, or, xor, exch, cas)
     * These happen immediately and atomically
-    * Acquire-Release semantics on the signal value
+    * Optional acquire-release semantics on the signal value
 
-##### Signal Kind amd_signal_kind_t
+##### Signal kind amd_signal_kind_t
 
 | **ID** | **Name** | **Description** |
 | --- | --- | --- |
 | 0 | AMD_SIGNAL_KIND_INVALID | An invalid signal. |
 | 1 | AMD_SIGNAL_KIND_USER | A regular signal |
-| -1 | AMD_SIGNAL_KIND_DOORBELL | Doorbell signal with hardware support | 
+| -1 | AMD_SIGNAL_KIND_DOORBELL | Doorbell signal with hardware support |
 | -2 | AMD_SIGNAL_KIND_LEGACY_DOORBELL | Doorbell signal with hardware support, legacy (GFX8) |
 
-##### Signal Object amd_signal_t
+##### Signal object amd_signal_t
 
 An AMD Signal object must always be 64 byte aligned to ensure it cannot span a page boundary. This is required by CP microcode which optimizes access to the structure by only doing a single SUA (System Uniform Address) translation when accessing signal fields. This optimization is used in GFX8.
 
@@ -413,8 +433,6 @@ The following is informal description of signal operations:
       * Address of the doorbell is in legacy_hardware_doorbell_ptr field of amd_signal_t.
     * Release spinlock protecting the legacy doorbell of the queue. Atomic store of value 0.
   * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
-
-### Terms and definitions
 
 ### References
 
