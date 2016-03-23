@@ -7,6 +7,7 @@ Table of Contents
 
 * [Introduction](#introduction)
 * [Platform details](#platform-details)
+  * [Finalizer, Code Object, Executable and Loader](#finalizer,-code-object,-executable-and-loader)
   * [Kernel dispatch](#kernel-dispatch)
   * [Initial kernel register state](#initial-kernel-register-state)
   * [Kernel prolog code](#kernel-prolog-code)
@@ -15,6 +16,12 @@ Table of Contents
   * [Flat scratch](#flat-scratch)
   * [M0 Register](#m0-register)
   * [Dynamic call stack](#dynamic-call-stack)
+  * [Memory model](#memory-model)
+    * [Memory model overview](#memory-model-overview)
+    * [Memory operation constraints for global segment](#memory-operation-constraints-for-global-segment)
+    * [Memory operation constraints for group segment](#memory-operation-constraints-for-group-segment)
+    * [Memory operation constraints for flat segment](#memory-operation-constraints-for-flat-segment)
+    * [Memory fence constraints](#memory-fence-constraints)
 * [Entity definitions](#entity-definitions)
   * [Instruction set architecture](#instruction-set-architecture)
   * [AMD Kernel Code](#amd-kernel-code)
@@ -112,7 +119,7 @@ The following table defines VGPR registers that can be enabled and their order.
 
 For certain features, kernel is expected to perform initialization actions, normally done in kernel prologue. This is only needed if kernel uses those features.
 
-##### Global/Readonly/Kernarg segments
+#### Global/Readonly/Kernarg segments
 
 Global segment can be accessed either using flat or buffer operations. Buffer operations cannot be used for large machine model for GFX7 and later as V# support for 64 bit addressing is not available.
 
@@ -124,18 +131,6 @@ If buffer operations are used then the Global Buffer used to access Global/Reado
 
 If buffer operations are used to access Kernarg segment, Kernarg address must be added. It is available in dispatch packet (kernarg_address field) or as Kernarg Segment Ptr SGPR. Alternatively, scalar loads can be used if the kernarg offset is uniform, as the kernarg segment is constant for the duration of the kernel dispatch execution.
 
-#### Flat scratch
-
-If kernel may use flat operations to access scratch memory, the prolog code must set up FLAT_SCRATCH register pair (FLAT_SCRATCH_LO/FLAT_SCRATCH_HI or SGPRn-4/SGPRn-3).
-
-For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgpr registers (see [Initial kernel register state](#initial-kernel-register-state)):
-  * The low word of Flat Scratch Init is 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and moved to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
-  * The second word of Flat Scratch Init is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
-
-#### M0 register
-
-M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
-
 #### Scratch memory swizzling
 
 Scratch memory may be used for private/spill/stack segment. Hardware will interleave (swizzle) scratch accesses of each lane of a wavefront by interleave (swizzle) element size to ensure each work-item gets a distinct memory location. Interleave size must be 2, 4, 8 or 16. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE).
@@ -144,9 +139,107 @@ For GFX8 and earlier, all load and store operations done to scratch buffer must 
 
 AMD HSA Runtime Finalizer uses value 4.
 
+#### Flat scratch
+
+If kernel may use flat operations to access scratch memory, the prolog code must set up FLAT_SCRATCH register pair (FLAT_SCRATCH_LO/FLAT_SCRATCH_HI or SGPRn-4/SGPRn-3).
+
+For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgpr registers (see [Initial kernel register state](#initial-kernel-register-state)):
+  * The low word of Flat Scratch Init is 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and move to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
+  * The second word of Flat Scratch Init is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
+
+#### M0 register
+
+M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
+
 #### Dynamic call stack
 
 In certain cases, Finalizer cannot compute the total private segment size at compile time. This can happen if calls are implemented using a call stack and recursion, alloca or calls to indirect functions are present. In this case, workitem\_private\_segment\_byte\_size field in code object only specifies the statically known private segment size. When performing actual kernel dispatch, private_segment_size_bytes field in dispatch packet will contain static private segment size plus additional space for the call stack.
+
+#### Memory model
+
+##### Memory model overview
+
+A memory model describes the interactions of threads through memory and their shared use of the data. Many modern programming languages implement a memory model. This section describes the mapping of common memory model constructs onto AMD GPU architecture.
+
+Through this section, definitions and constraints from "HSA Platform System Architecture Specification 1.0" are used as reference, although similar notions exist elsewhere (for example, in C99 or C++ 11).
+
+The following memory scopes are defined:
+  * Work-item (wi)
+  * Wavefront (wave)
+  * Work-group (wg)
+  * Agent (agent)
+  * System (system)
+
+The following memory orders are defined:
+  * scacq: sequentially consistent acquire
+  * screl: sequentially consistent release
+  * scar: sequentially consistent acquire and release
+  * rlx: relaxed
+
+The following operations are defined:
+  * Ordinary Load/Store (non-synchronizing operations)
+  * Atomic Load/Atomic Store (synchronizing operations)
+  * Atomic RMW (Read-Modify-Write: add, sub, max, min, and, or, xor, wrapinc, wrapdec, exch, cas (synchronizing operations)
+  * Memory Fence (synchronizing operation)
+
+In the following sections, sometimes derived notation is used. For example, agent+ means agent and system scopes, wg- means work-group, wavefront and work-item scopes.
+
+##### Memory operation constraints for global segment
+
+For global segment, the following machine code instructions may be used (see [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)):
+  * Ordinary Load/Store: BUFFER_LOAD/BUFFER_STORE or FLAT_LOAD/FLAT_STORE
+  * Atomic Load/Store: BUFFER_LOAD/BUFFER_STORE or FLAT_LOAD/FLAT_STORE
+  * Atomic RMW: BUFFER_ATOMIC or FLAT_ATOMIC
+
+| **Operation** | **Memory order** | **Memory scope** | **Machine code sequence** |
+| --- | --- | --- | --- |
+| Ordinary Load | - | - | load with glc=0 |
+| Atomic Load | rlx,scacq | wg- | load with glc=0 |
+| Atomic Load | rlx | agent+ | load with glc=1 |
+| Atomic Load | scacq | agent+ | load with glc=1; buffer_wbinv_vol |
+| Ordinary Store | - | - | store with glc=0 |
+| Atomic Store | rlx,screl | wg- | store with glc=0 |
+| Atomic Store | rlx | agent+ | store with glc=0 |
+| Atomic Store | screl | agent+ | s_waitcnt vmcnt(0); store with glc=0; s_waitcnt vmcnt(0) |
+| Atomic RMW | rlx,scacq, screl, scar | wg- | atomic |
+| Atomic RMW | rlx | agent+ | atomic |
+| Atomic RMW | scacq | agent+ | atomic; s_waitcnt vmcnt(0); buffer_wbinv_vol |
+| Atomic RMW | screl | agent+ | s_waitcnt 0; atomic |
+| Atomic RMW | scar | agent+ | s_waitcnt vmcnt(0); atomic; s_waitcnt vmcnt(0); buffer_wbinv_vol |
+
+##### Memory operation constraints for group segment
+
+For group segment, the following machine code instructions are used:
+  * Ordinary Load/Store: DS_READ/DS_WRITE
+  * Atomic Load/Store: DS_READ/DS_WRITE
+  * Atomic RMW: DS_ADD, DS_SUB, DS_MAX, DS_MIN, DS_AND, DS_OR, DS_XOR, DS_INC, DS_DEC, DS_WRXCHG, DS_CMPST (and corresponding RTN variants)
+
+| **Operation** | **Memory order** | **Memory scope** | **Machine code sequence** |
+| --- | --- | --- | --- |
+| Ordinary Load | - | - | load |
+| Atomic Load | rlx | wg- | load |
+| Atomic Load | scacq | wg- | s_waitcnt vmcnt(0); load; buffer_wbinvl1_vol |
+| Ordinary Store | - | - | store |
+| Atomic Store | rlx | wg- | store |
+| Atomic Store | screl | wg- | s_waitcnt vmcnt(0); store |
+| Atomic RMW | scacq | wg- | s_waitcnt vmcnt(0); atomic; buffer_wbinvl1_vol |
+| Atomic RMW | screl | wg- | s_waitcnt vmcnt(0); atomic |
+| Atomic RMW | scacq | wg- | s_waitcnt vmcnt(0); atomic; buffer_wbinvl1_vol |
+
+##### Memory operation constraints for flat segment
+
+For flat segment, if memory operation may affect either global or group segment, group constraints must be applied to flat operations as well.
+
+##### Memory fence constraints
+
+Memory fence is currently applied to all segments (cross-segment synchronization), but it may change in the future. In machine code, memory fence does not have separate instruction, but maps to s_waitcnt and buffer_wbinvl1_vol instructions.  In addition, memory fence must not be moved in machine code with respect to other synchronizing operations. In the following table, 'memfence' refers to conceptual memory fence location.
+
+| **Operation** | **Memory order** | **Memory scope** | **Machine code sequence** |
+| --- | --- | --- | --- |
+| Memory Fence | scacq,screl,scar | wg- | memfence (no additional constraints) |
+| Memory Fence | scacq | agent+ | memfence; s_waitcnt 0; buffer_wbinvl1_vol |
+| Memory Fence | screl | agent+ | s_waitcnt 0; memfence |
+| Memory Fence | scar | agent + | memfence; s_waitcnt 0; buffer_wbinvl1_vol |
 
 ### Entity definitions
 
