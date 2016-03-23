@@ -1,4 +1,4 @@
-## AMDGPU Compute Application Binary Interface
+# AMDGPU Compute Application Binary Interface
 
 Version 0.40 (March 2016)
 
@@ -6,52 +6,49 @@ Table of Contents
 =================
 
 * [Introduction](#introduction)
-* [Platform details](#platform-details)
-  * [Finalizer, Code Object, Executable and Loader](#finalizer,-code-object,-executable-and-loader)
-  * [Kernel dispatch](#kernel-dispatch)
-  * [Initial kernel register state](#initial-kernel-register-state)
-  * [Kernel prolog code](#kernel-prolog-code)
-  * [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
-  * [Scratch memory swizzling](#scratch-memory-swizzling)
-  * [Flat scratch](#flat-scratch)
-  * [M0 Register](#m0-register)
-  * [Dynamic call stack](#dynamic-call-stack)
-  * [Memory model](#memory-model)
-    * [Memory model overview](#memory-model-overview)
-    * [Memory operation constraints for global segment](#memory-operation-constraints-for-global-segment)
-    * [Memory operation constraints for group segment](#memory-operation-constraints-for-group-segment)
-    * [Memory operation constraints for flat segment](#memory-operation-constraints-for-flat-segment)
-    * [Memory fence constraints](#memory-fence-constraints)
-* [Entity definitions](#entity-definitions)
-  * [Instruction set architecture](#instruction-set-architecture)
-  * [AMD Kernel Code](#amd-kernel-code)
-    * [AMD Kernel Code Object amd_kernel_code_t](#amd-kernel-code-object-amd_kernel_code_t)
-    * [Compute shader program settings 1 amd_compute_pgm_rsrc1_t](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t)
-    * [Compute shader program settings 2 amd_compute_pgm_rsrc2_t](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
-    * [AMD Machine Kind amd_machine_kind_t](#amd-machine-kind-amd_machine_kind_t)
-    * [Float Round Mode amd_float_round_mode_t](#float-round-mode-amd_float_round_mode_t)
-    * [Denorm Mode amd_float_denorm_mode_t](#denorm-mode-amd_float_denorm_mode_t)
-  * [AMD Queue](#amd-queue)
-     * [HSA AQL Queue Object hsa_queue_t](#hsa-aql-queue-object-hsa_queue_t)
-     * [AMD AQL Queue Object amd_queue_t](#amd-aql-queue-object-amd_queue_t)
-     * [Queue operations](#queue-operations)
-  * [Signals](#signals)
-    * [Signals overview](#signals-overview)
-    * [Signal kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
-    * [Signal object amd_signal_t](#signal-object-amd_signal_t)
-    * [Signal kernel machine code](#signal-kernel-machine-code)
+* [Finalizer, Code Object, Executable and Loader](#finalizer,-code-object,-executable-and-loader)
+* [Kernel dispatch](#kernel-dispatch)
+* [Initial kernel register state](#initial-kernel-register-state)
+* [Kernel prolog code](#kernel-prolog-code)
+* [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
+* [Scratch memory swizzling](#scratch-memory-swizzling)
+* [Flat scratch](#flat-scratch)
+* [M0 Register](#m0-register)
+* [Dynamic call stack](#dynamic-call-stack)
+* [Memory model](#memory-model)
+  * [Memory model overview](#memory-model-overview)
+  * [Memory operation constraints for global segment](#memory-operation-constraints-for-global-segment)
+  * [Memory operation constraints for group segment](#memory-operation-constraints-for-group-segment)
+  * [Memory operation constraints for flat segment](#memory-operation-constraints-for-flat-segment)
+  * [Memory fence constraints](#memory-fence-constraints)
+* [Instruction set architecture](#instruction-set-architecture)
+* [AMD Kernel Code](#amd-kernel-code)
+  * [AMD Kernel Code Object amd_kernel_code_t](#amd-kernel-code-object-amd_kernel_code_t)
+  * [Compute shader program settings 1 amd_compute_pgm_rsrc1_t](#compute-shader-program-settings-1-amd_compute_pgm_rsrc1_t)
+  * [Compute shader program settings 2 amd_compute_pgm_rsrc2_t](#compute-shader-program-settings-2-amd_compute_pgm_rsrc2_t)
+  * [AMD Machine Kind amd_machine_kind_t](#amd-machine-kind-amd_machine_kind_t)
+  * [Float Round Mode amd_float_round_mode_t](#float-round-mode-amd_float_round_mode_t)
+  * [Denorm Mode amd_float_denorm_mode_t](#denorm-mode-amd_float_denorm_mode_t)
+* [AMD Queue](#amd-queue)
+   * [HSA AQL Queue Object hsa_queue_t](#hsa-aql-queue-object-hsa_queue_t)
+   * [AMD AQL Queue Object amd_queue_t](#amd-aql-queue-object-amd_queue_t)
+   * [Queue operations](#queue-operations)
+* [Signals](#signals)
+  * [Signals overview](#signals-overview)
+  * [Signal kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
+  * [Signal object amd_signal_t](#signal-object-amd_signal_t)
+  * [Signal kernel machine code](#signal-kernel-machine-code)
 * [References](#references)
 
-### Introduction
+## Introduction
 
 This specification defines the application binary interface (ABI) provided by the AMD implementation of the HSA runtime for AMD GPU architecture agents. The AMD GPU architecture is a family of GPU agents which differ in machine code encoding and functionality.
 
-### Platform details
-#### Finalizer, Code Object, Executable and Loader
+## Finalizer, Code Object, Executable and Loader
 
 Finalizer, Code Object, Executable and Loader are defined in "HSA Programmer Reference Manual Specification". AMD Code Object uses ELF format. In this document, Finalizer is any compiler producing code object, including kernel machine code.
 
-#### Kernel dispatch
+## Kernel dispatch
 
 The HSA Architected Queuing Language (AQL) defines a user space memory interface, an AQL Queue, to an agent that can be used to control the dispatch of kernels, using AQL Packets, in an agent independent way. All AQL packets are 64 bytes and are defined in "HSA Platform System Architecture Specification". The packet processor of a kernel agent is responsible for detecting and dispatching kernels from the AQL Queues associated with it. For AMD GPUs the packet processor is implemented by the Command Processor (CP).
 
@@ -73,7 +70,7 @@ At some point, CP performs actual kernel execution:
   * When a wavefront start executing the kernel machine code, the prolog (see ["Kernel prolog code"](#kernel-prolog-code)) sets up the machine state as necessary.
   * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0.
 
-#### Initial kernel register state
+## Initial kernel register state
 
 Prior to start of every wavefront execution, CP/SPI sets up the register state based on enable\_sgpr\_\* and enable\_vgpr\_\* flags in amd_kernel_code_t object:
   * SGPRs before the Work-Group Ids are set by CP using the 16 User Data registers.
@@ -115,11 +112,11 @@ The following table defines VGPR registers that can be enabled and their order.
 | then | 1 | Work-Item Id Y (enable\_vgpr\_workitem\_id \> 0) | 32 bit work item id in Y dimension of work-group for wavefront lane. |
 | then | 1 | Work-Item Id Z (enable\_vgpr\_workitem\_id \> 1) | 32 bit work item id in Z dimension of work-group for wavefront lane. |
 
-#### Kernel prolog code
+## Kernel prolog code
 
 For certain features, kernel is expected to perform initialization actions, normally done in kernel prologue. This is only needed if kernel uses those features.
 
-#### Global/Readonly/Kernarg segments
+## Global/Readonly/Kernarg segments
 
 Global segment can be accessed either using flat or buffer operations. Buffer operations cannot be used for large machine model for GFX7 and later as V# support for 64 bit addressing is not available.
 
@@ -131,7 +128,7 @@ If buffer operations are used then the Global Buffer used to access Global/Reado
 
 If buffer operations are used to access Kernarg segment, Kernarg address must be added. It is available in dispatch packet (kernarg_address field) or as Kernarg Segment Ptr SGPR. Alternatively, scalar loads can be used if the kernarg offset is uniform, as the kernarg segment is constant for the duration of the kernel dispatch execution.
 
-#### Scratch memory swizzling
+## Scratch memory swizzling
 
 Scratch memory may be used for private/spill/stack segment. Hardware will interleave (swizzle) scratch accesses of each lane of a wavefront by interleave (swizzle) element size to ensure each work-item gets a distinct memory location. Interleave size must be 2, 4, 8 or 16. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE).
 
@@ -139,7 +136,7 @@ For GFX8 and earlier, all load and store operations done to scratch buffer must 
 
 AMD HSA Runtime Finalizer uses value 4.
 
-#### Flat scratch
+## Flat scratch
 
 If kernel may use flat operations to access scratch memory, the prolog code must set up FLAT_SCRATCH register pair (FLAT_SCRATCH_LO/FLAT_SCRATCH_HI or SGPRn-4/SGPRn-3).
 
@@ -147,17 +144,17 @@ For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgp
   * The low word of Flat Scratch Init is 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and move to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
   * The second word of Flat Scratch Init is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
 
-#### M0 register
+## M0 register
 
 M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
 
-#### Dynamic call stack
+## Dynamic call stack
 
 In certain cases, Finalizer cannot compute the total private segment size at compile time. This can happen if calls are implemented using a call stack and recursion, alloca or calls to indirect functions are present. In this case, workitem\_private\_segment\_byte\_size field in code object only specifies the statically known private segment size. When performing actual kernel dispatch, private_segment_size_bytes field in dispatch packet will contain static private segment size plus additional space for the call stack.
 
-#### Memory model
+## Memory model
 
-##### Memory model overview
+### Memory model overview
 
 A memory model describes the interactions of threads through memory and their shared use of the data. Many modern programming languages implement a memory model. This section describes the mapping of common memory model constructs onto AMD GPU architecture.
 
@@ -184,7 +181,7 @@ The following operations are defined:
 
 In the following sections, sometimes derived notation is used. For example, agent+ means agent and system scopes, wg- means work-group, wavefront and work-item scopes.
 
-##### Memory operation constraints for global segment
+### Memory operation constraints for global segment
 
 For global segment, the following machine code instructions may be used (see [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)):
   * Ordinary Load/Store: BUFFER_LOAD/BUFFER_STORE or FLAT_LOAD/FLAT_STORE
@@ -207,7 +204,7 @@ For global segment, the following machine code instructions may be used (see [Gl
 | Atomic RMW | screl | agent+ | s_waitcnt 0; atomic |
 | Atomic RMW | scar | agent+ | s_waitcnt vmcnt(0); atomic; s_waitcnt vmcnt(0); buffer_wbinv_vol |
 
-##### Memory operation constraints for group segment
+### Memory operation constraints for group segment
 
 For group segment, the following machine code instructions are used:
   * Ordinary Load/Store: DS_READ/DS_WRITE
@@ -226,11 +223,11 @@ For group segment, the following machine code instructions are used:
 | Atomic RMW | screl | wg- | s_waitcnt vmcnt(0); atomic |
 | Atomic RMW | scacq | wg- | s_waitcnt vmcnt(0); atomic; buffer_wbinvl1_vol |
 
-##### Memory operation constraints for flat segment
+### Memory operation constraints for flat segment
 
 For flat segment, if memory operation may affect either global or group segment, group constraints must be applied to flat operations as well.
 
-##### Memory fence constraints
+### Memory fence constraints
 
 Memory fence is currently applied to all segments (cross-segment synchronization), but it may change in the future. In machine code, memory fence does not have separate instruction, but maps to s_waitcnt and buffer_wbinvl1_vol instructions.  In addition, memory fence must not be moved in machine code with respect to other synchronizing operations. In the following table, 'memfence' refers to conceptual memory fence location.
 
@@ -241,9 +238,7 @@ Memory fence is currently applied to all segments (cross-segment synchronization
 | Memory Fence | screl | agent+ | s_waitcnt 0; memfence |
 | Memory Fence | scar | agent + | memfence; s_waitcnt 0; buffer_wbinvl1_vol |
 
-### Entity definitions
-
-#### Instruction set architecture
+## Instruction set architecture
 
 AMDGPU ISA specifies instruction set architecture and capabilities used by machine code. It consists of several fields:
   * Vendor ("AMD")
@@ -263,11 +258,11 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 | AMD | AMDGPU | 8 | 0 | 4 | GFX8, -XNACK | Fiji |
 | AMD | AMDGPU | 8 | 1 | 0 | GFX8, +XNACK | Stoney |
 
-#### AMD Kernel Code
+## AMD Kernel Code
 
 AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a kernel dispatch and consists of the meta data needed to initiate the execution of a kernel, including the entry point address of the machine code that implements the kernel.
 
-##### AMD Kernel Code Object amd_kernel_code_t
+### AMD Kernel Code Object amd_kernel_code_t
 
 | **Bits** | **Size** | **Field Name** | **Description** |
 | --- | --- | --- | --- |
@@ -324,7 +319,7 @@ AMD Kernel Code object is used by AMD GPU CP to set up the hardware to execute a
 | 2047:1024 | 128 bytes | control\_directive | Control directives for this kernel used in generating the machine code. The values are intended to reflect the constraints that the code actually requires to correctly execute, not the values that were actually specified at finalize time. If the finalizer chooses to ignore a control directive, and not generate constrained code, then the control directive should not be marked as enabled. |
 | 2048 | | | Total size 256 bytes. |
 
-##### Compute shader program settings 1 amd_compute_pgm_rsrc1_t
+### Compute shader program settings 1 amd_compute_pgm_rsrc1_t
 
 The fields of amd_compute_pgm_rsrc1 are used by CP to set up COMPUTE\_PGM\_RSRC1.
 
@@ -346,7 +341,7 @@ The fields of amd_compute_pgm_rsrc1 are used by CP to set up COMPUTE\_PGM\_RSRC1
 | 31:26 | 6 bits | reserved | Reserved. Must be 0. |
 | 32 | | | Total size 4 bytes. |
 
-##### Compute shader program settings 2 amd_compute_pgm_rsrc2_t
+### Compute shader program settings 2 amd_compute_pgm_rsrc2_t
 
 The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2.
 
@@ -373,14 +368,14 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | 31 | 1 bit | | Reserved. Must be 0. |
 | 32 | | | Total size 4 bytes. |
 
-##### AMD Machine Kind amd_machine_kind_t
+### AMD Machine Kind amd_machine_kind_t
 
 | **Enumeration Name** | **Value** | **Description** |
 | --- | --- | --- |
 | AMD\_MACHINE\_KIND\_UNDEFINED | 0 | Machine kind is undefined. |
 | AMD\_MACHINE\_KIND\_AMDGPU | 1 | Machine kind is AMD GPU. Corresponds to AMD GPU ISA architecture of AMDGPU. |
 
-##### Float Round Mode amd_float_round_mode_t
+### Float Round Mode amd_float_round_mode_t
 
 | **Enumeration Name** | **Value** | **Description** |
 | --- | --- | ---- |
@@ -389,7 +384,7 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | AMD\_FLOAT\_ROUND\_MODE\_MINUS\_INFINITY | 2 | Round Toward -infinity |
 | AMD\_FLOAT\_ROUND\_MODE\_ZERO | 3 | Round Toward 0 |
 
-##### Denorm Mode amd_float_denorm_mode_t
+### Denorm Mode amd_float_denorm_mode_t
 
 | **Enumeration Name** | **Value** | **Description** |
 | --- | --- | ---- |
@@ -398,13 +393,13 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_SRC | 2 | Flush Source Denorms |
 | AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_NONE | 3 | No Flush |
 
-#### AMD Queue
+## AMD Queue
 
-##### HSA AQL Queue Object hsa_queue_t
+### HSA AQL Queue Object hsa_queue_t
 
 HSA Queue Object is defined in "HSA Platform System Architecture Specification". AMD HSA Queue handle is a pointer to amd_queue_t.
 
-##### AMD AQL Queue Object amd_queue_t
+### AMD AQL Queue Object amd_queue_t
 
 The AMD HSA Runtime implementation uses the AMD Queue object (amd_queue_t) to implement AQL queues. It begins with the HSA Queue object, and then has additional information contiguously afterwards that is AMD device specific. The AMD device specific information is accessible by the AMD HSA Runtime, CP and kernel machine code.
 
@@ -429,7 +424,7 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 | 1536 | | | Start of next cache line for fields not accessed under normal conditions by the packet processor (CP micro code). These are kept in a single cache line to minimize memory accesses performed by CP micro code. |
 | 2048 | | | Total size 256 bytes. |
 
-##### Queue operations
+### Queue operations
 
 A queue has an associated set of high-level operations defined in "HSA Runtime Specification" (API functions in host code) and "HSA Programmer Reference Manual Specification" (kernel code).
 
@@ -441,8 +436,8 @@ The following is informal description of AMD implementation of queue operations 
   * Add Queue Write Index: Atomic add of write_dispatch_id field
   * Compare-And-Swap Queue Write Index: Atomic CAS of write_dispatch_id field
 
-#### Signals
-##### Signals overview
+## Signals
+### Signals overview
 Signal handle is 8 bytes. AMD signal handle is a pointer to AMD Signal Object (amd_signal_t).
 
 The following operations are defined on HSA Signals:
@@ -460,7 +455,7 @@ The following operations are defined on HSA Signals:
     * These happen immediately and atomically
     * Optional acquire-release semantics on the signal value
 
-##### Signal kind amd_signal_kind_t
+### Signal kind amd_signal_kind_t
 
 | **ID** | **Name** | **Description** |
 | --- | --- | --- |
@@ -469,7 +464,7 @@ The following operations are defined on HSA Signals:
 | -1 | AMD_SIGNAL_KIND_DOORBELL | Doorbell signal with hardware support |
 | -2 | AMD_SIGNAL_KIND_LEGACY_DOORBELL | Doorbell signal with hardware support, legacy (GFX8) |
 
-##### Signal object amd_signal_t
+### Signal object amd_signal_t
 
 An AMD Signal object must always be 64 byte aligned to ensure it cannot span a page boundary. This is required by CP microcode which optimizes access to the structure by only doing a single SUA (System Uniform Address) translation when accessing signal fields. This optimization is used in GFX8.
 
@@ -488,7 +483,7 @@ An AMD Signal object must always be 64 byte aligned to ensure it cannot span a p
 | 511:448 | 8 bytes | | Padding to 64 byte size. Must be 0. |
 | 512 | | | Total size 64 bytes |
 
-##### Signal kernel machine code
+### Signal kernel machine code
 
 As signal kind is determined by kind field of amd_signal_t, instruction sequence for signal operation must branch on signal kind.
 
@@ -527,7 +522,7 @@ The following is informal description of signal operations:
     * Release spinlock protecting the legacy doorbell of the queue. Atomic store of value 0.
   * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
 
-### References
+## References
 
   * [HSA Standards and Specifications](http://www.hsafoundation.com/standards/)
    * [HSA Platform System Architecture Specification 1.0](http://www.hsafoundation.com/?ddownload=4944)
