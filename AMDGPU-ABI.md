@@ -8,6 +8,7 @@ Table of Contents
 * [Introduction](#introduction)
 * [Finalizer, Code Object, Executable and Loader](#finalizer,-code-object,-executable-and-loader)
 * [Kernel dispatch](#kernel-dispatch)
+* [Hardware registers setup](#hardware-registers-setup)
 * [Initial kernel register state](#initial-kernel-register-state)
 * [Kernel prolog code](#kernel-prolog-code)
 * [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
@@ -69,6 +70,13 @@ At some point, CP performs actual kernel execution:
   * CP ensures that when a wavefront starts executing the kernel machine code, the scalar general purpose registers (SGPR) and vector general purpose registers (VGPR) are set up based on flags in amd_kernel_code_t (see ["Initial kernel register state"](#initial-kernel-register-state)).
   * When a wavefront start executing the kernel machine code, the prolog (see ["Kernel prolog code"](#kernel-prolog-code)) sets up the machine state as necessary.
   * When the kernel dispatch has completed execution, CP signals the completion signal specified in the kernel dispatch packet if not 0.
+
+## Hardware registers setup
+
+SH_MEM_CONFIG register:
+  * DEFAULT_MTYPE = 1 (MTYPE_NC)
+  * ALIGNMENT_MODE = 3 (SH_MEM_ALIGNMENT_MODE_UNALIGNED)
+  * PTR32 = 1 in 32-bit mode and 0 in 64-bit mode
 
 ## Initial kernel register state
 
@@ -173,13 +181,17 @@ The following memory orders are defined:
   * scar: sequentially consistent acquire and release
   * rlx: relaxed
 
-The following operations are defined:
+The following memory operations are defined:
   * Ordinary Load/Store (non-synchronizing operations)
   * Atomic Load/Atomic Store (synchronizing operations)
   * Atomic RMW (Read-Modify-Write: add, sub, max, min, and, or, xor, wrapinc, wrapdec, exch, cas (synchronizing operations)
   * Memory Fence (synchronizing operation)
 
-In the following sections, sometimes derived notation is used. For example, agent+ means agent and system scopes, wg- means work-group, wavefront and work-item scopes.
+Sometimes derived notation is used. For example, agent+ means agent and system scopes, wg- means work-group, wavefront and work-item scopes.
+
+In the following sections, a combination of memory segment, operation, order and scope is assigned a machine code sequence. Note that if s_waitcnt vmcnt(0) is used to enforce a completion of earlier memory operations in same workitem, it can be omitted if it is also enforced using some other mechanism or proven by compiler (for example, if there are no preceding synchronizing memory operations). Similiarily, if s_waitcnt vmcnt(0) is used to enforce completion of this memory operation before the following memory operations, sometimes it can be omitted (for example, if there are no following synchronizing memory operations).
+
+For a flat memory operation, if it may affect either global or group segment, group constraints must be applied to flat operations as well.
 
 ### Memory operation constraints for global segment
 
@@ -193,7 +205,7 @@ For global segment, the following machine code instructions may be used (see [Gl
 | Ordinary Load | - | - | load with glc=0 |
 | Atomic Load | rlx,scacq | wg- | load with glc=0 |
 | Atomic Load | rlx | agent+ | load with glc=1 |
-| Atomic Load | scacq | agent+ | load with glc=1; buffer_wbinv_vol |
+| Atomic Load | scacq | agent+ | load with glc=1; s_waitcnt vmcnt(0); buffer_wbinv_vol |
 | Ordinary Store | - | - | store with glc=0 |
 | Atomic Store | rlx,screl | wg- | store with glc=0 |
 | Atomic Store | rlx | agent+ | store with glc=0 |
@@ -201,7 +213,7 @@ For global segment, the following machine code instructions may be used (see [Gl
 | Atomic RMW | rlx,scacq, screl, scar | wg- | atomic |
 | Atomic RMW | rlx | agent+ | atomic |
 | Atomic RMW | scacq | agent+ | atomic; s_waitcnt vmcnt(0); buffer_wbinv_vol |
-| Atomic RMW | screl | agent+ | s_waitcnt 0; atomic |
+| Atomic RMW | screl | agent+ | s_waitcnt vmcnt(0); atomic |
 | Atomic RMW | scar | agent+ | s_waitcnt vmcnt(0); atomic; s_waitcnt vmcnt(0); buffer_wbinv_vol |
 
 ### Memory operation constraints for group segment
@@ -210,6 +222,10 @@ For group segment, the following machine code instructions are used:
   * Ordinary Load/Store: DS_READ/DS_WRITE
   * Atomic Load/Store: DS_READ/DS_WRITE
   * Atomic RMW: DS_ADD, DS_SUB, DS_MAX, DS_MIN, DS_AND, DS_OR, DS_XOR, DS_INC, DS_DEC, DS_WRXCHG, DS_CMPST (and corresponding RTN variants)
+
+AMD LDS hardware is sequentially consistent. This means that it is not necessary to use lgkmcnt to enforce ordering in single work-item for group segment synchronization. s_waitcnt lgkmcnt(0) should still be used to enforce data dependencies, for example, after a load into a register and before use of that register (same applies to non-synchronizing operations).
+
+The current model (and HSA) requires that global and group segments are coherent. This is why synchronizing group segment operations and memfence also use s_waitcnt vmcnt(0).
 
 | **Operation** | **Memory order** | **Memory scope** | **Machine code sequence** |
 | --- | --- | --- | --- |
@@ -223,13 +239,9 @@ For group segment, the following machine code instructions are used:
 | Atomic RMW | screl | wg- | s_waitcnt vmcnt(0); atomic |
 | Atomic RMW | scacq | wg- | s_waitcnt vmcnt(0); atomic; buffer_wbinvl1_vol |
 
-### Memory operation constraints for flat segment
-
-For flat segment, if memory operation may affect either global or group segment, group constraints must be applied to flat operations as well.
-
 ### Memory fence constraints
 
-Memory fence is currently applied to all segments (cross-segment synchronization), but it may change in the future. In machine code, memory fence does not have separate instruction, but maps to s_waitcnt and buffer_wbinvl1_vol instructions.  In addition, memory fence must not be moved in machine code with respect to other synchronizing operations. In the following table, 'memfence' refers to conceptual memory fence location.
+Memory fence is currently applied to all segments (cross-segment synchronization). In machine code, memory fence does not have separate instruction and maps to s_waitcnt and buffer_wbinvl1_vol instructions.  In addition, memory fence must not be moved in machine code with respect to other synchronizing operations. In the following table, 'memfence' refers to conceptual memory fence location.
 
 | **Operation** | **Memory order** | **Memory scope** | **Machine code sequence** |
 | --- | --- | --- | --- |
