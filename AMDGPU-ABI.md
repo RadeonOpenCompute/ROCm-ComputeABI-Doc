@@ -13,6 +13,7 @@ Table of Contents
 * [Kernel prolog code](#kernel-prolog-code)
 * [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
 * [Scratch memory swizzling](#scratch-memory-swizzling)
+* [Flat addressing](#flat-addressing)
 * [Flat scratch](#flat-scratch)
 * [M0 Register](#m0-register)
 * [Dynamic call stack](#dynamic-call-stack)
@@ -143,6 +144,52 @@ Scratch memory may be used for private/spill/stack segment. Hardware will interl
 For GFX8 and earlier, all load and store operations done to scratch buffer must not exceed this size. For example, if the element size is 4 (32-bits or dword) and a 64-bit value must be loaded, it must be split into two 32-bit loads. This ensures that the interleaving will get the work-item specific dword for both halves of the 64-bit value. If it just did a 64-bit load then it would get one dword which belonged to its own work-item, but the second dword would belong to the adjacent lane work-item since the interleaving is in dwords.
 
 AMD HSA Runtime Finalizer uses value 4.
+
+## Flat addressing
+
+Flat address can be used in FLAT instructions and can access global, private (scratch) and group (lds) memory.
+
+Flat access to scratch requires hardware aperture setup and setup in kernel prologue (see [Flat scratch](#flat-scratch)).
+
+Flat access to lds requires hardware aperture setup and M0 register setup (see [M0 register](#m0-register)).
+
+Address operations for group/private segment may use fields from amd_queue_t, the address of which can be obtained with Queue Ptr SGPR.
+
+To obtain null address value for a segment (nullptr HSAIL instruction),
+  * For global, readonly and flat segment use value 0.
+  * For group, private and kernarg segments, use value -1 (32-bit).
+
+To convert segment address to flat address (stof HSAIL instruction),
+  * For global segment, use the same value.
+  * For kernarg segment, add Kernarg Segment Ptr. For small model, this is a 32-bit add. For large model, this is 32-bit add to 64-bit base address.
+  * For group segment,
+    * for large model, combine group\_segment\_aperture\_base\_hi (upper half) and segment address (lower half),
+    * for small model, add group\_segment\_aperture\_base\_hi and segment address.
+  * For private/spill/arg segment,
+    * for large model, combine private\_segment\_aperture\_base\_hi (upper half) and segment address (lower half),
+    * for small model, add private\_segment\_aperture\_base\_hi and segment address.
+  * If flat address may be null, kernarg, group and private/spill arg segment machine code must have additional sequence (use V_CMP and V_CNDMASK).
+
+To convert flat address to segment address (ftos HSAIL instruction),
+  * For global segment, use the same value.
+  * For kernarg segment, subtract Kernarg Segment Ptr. For small model, this is a 32-bit subtract. For large model, this is 32-bit subtract from lower half of the 64-bit flat address.
+  * For group segment,
+    * for large model, use low half of the flat address,
+    * for small model, subtract group\_segment\_aperture\_base\_hi.
+  * For private/spill/arg segment,
+    * for large model, use low half of the flat address,
+    * for small model, subtract private\_segment\_aperture\_base\_hi.
+  * If segment address may be null, kernarg, group and private/spill arg segment machine code must have additional sequence (use V_CMP and V_CNDMASK).
+
+To determine if given flat address lies within a segment (segmentp HSAIL instruction),
+  * For global segment, check that address does not lie in group/private segments
+  * For group segment, check if address lies in group segment aperture
+    * for large model, check that upper half of 64-bit address == group\_segment\_aperture\_base\_hi,
+    * for small model, check that most significant 16 bits of 32-bit address (address & ~0xFFFF) == group\_segment\_aperture\_base\_hi.
+  * For private segment, check if address lies in private segment aperture
+    * for large model, check that upper half of 64-bit address == private\_segment\_aperture\_base\_hi,
+    * for small model, check that most significant 16 bits of 32-bit address (address & ~0xFFFF) == group\_segment\_aperture\_base\_hi.
+  * If flat address may be null, machine code must have additional sequence (use V_CMP).
 
 ## Flat scratch
 
