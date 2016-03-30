@@ -462,7 +462,7 @@ HSA Queue Object is defined in "HSA Platform System Architecture Specification".
 
 The AMD HSA Runtime implementation uses the AMD Queue object (amd_queue_t) to implement AQL queues. It begins with the HSA Queue object, and then has additional information contiguously afterwards that is AMD device specific. The AMD device specific information is accessible by the AMD HSA Runtime, CP and kernel machine code.
 
-The AMD Queue object must be allocated on 64 byte alignment. Allows CP microcode to fetch fields using cache line addresses. The entire AMD Queue object must not span a 4GiB boundary. This allows CP to save a few instructions when calculating the base address of amd_queue_t from &(amd_queue_t.read_dispatch_id) and amd_queue_t.read_dispatch_id_field_base_offset.
+The AMD Queue object must be allocated on 64 byte alignment. This allows CP microcode to fetch fields using cache line addresses. The entire AMD Queue object must not span a 4GiB boundary. This allows CP to save a few instructions when calculating the base address of amd_queue_t from &(amd_queue_t.read_dispatch_id) and amd_queue_t.read_dispatch_id_field_base_offset.
 
 For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 
@@ -470,16 +470,18 @@ For GFX8 and earlier systems, only HSA Queue type SINGLE is supported.
 | --- | --- | --- | --- |
 | 319:0 | 40 bytes | hsa_queue | HSA Queue object |
 | 447:320 | 16 bytes | | Unused. Allows hsa\_queue\_t to expand but still keeps write\_dispatch\_id, which is written by the producer (often the host CPU), in the same cache line. Must be 0. |
-| 511:448 | 8 bytes | write\_dispatch\_id | A 64-bit unsigned integer. On GFX8, specifies the Dispatch ID of the next AQL packet to be allocated by the application or user-level runtime. On GFX7, hsa\_queue.base\_address + ((write\_dispatch\_id % hsa\_queue.size) \* 64 /\* AQL packet size \*/) is the virtual addressfor the next AQL packet allocated. Initialized to 0 at queue creation time. Note: On pre-GFX8 (eg Kaveri), the write\_dispatch\_id is specified in dwords and must be divided by (AQL packet\_size of 64 / dword size of 4)=16 to obtain the HSA "packet-granularity" write offset. Therefore, hsa\_queue.base\_address + (((write\_dispatch\_id/16) % hsa\_queue.size) \* 64 /\* AQL packet size \*/) is the virtual address for the next AQL packet allocated. Finalizer and Runtime software is responsible for converting dword offsets to packet granularity. |
-| 512 | | | Start of cache line for fields accessed by kernel machine code isa |
+| 511:448 | 8 bytes | write\_dispatch\_id | 64-bit index of the next packet to be allocated by application or user-level runtime. Initialized to 0 at queue creation time. |
+| 512 | | | Start of cache line for fields accessed by kernel machine code isa. |
 | 543:512 | 4 bytes | group\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit group segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 29b0}. For HSA32, the 32 bits of the 32 bit group segment flat address aperture. This is the same value as {SH\_MEM\_BASES:SHARED\_BASE[15:0], 16b0}. |
 | 575:544 | 4 bytes | private\_segment\_aperture\_base\_hi | For HSA64, the most significant 32 bits of the 64 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:13], 28b0, 1b1} For HSA32, the 32 bits of the 32 bit private segment flat address aperture base. This is the same value as {SH\_MEM\_BASES:PRIVATE\_BASE[15:0], 16b0}. |
-| 607:576 | 4 bytes | max\_cu\_id | The number of compute units 1 on the agent to which the queue is associated. |
-| 639:608 | 4 bytes | max\_wave\_id | The number of wavefronts 1 that can be executed on a single compute unit of the device to which the queue is associated. |
-| 703:640 | 8 bytes | max\_legacy\_doorbell\_dispatch\_id\_plus\_1 |Must be initialized to 0 at queue creation time. For queues attached to GFX8 and earlier hardware, it is necessary to prevent backwards doorbells in the software signal operation. This field is used to hold the maximum doorbell dispatch id [plus 1] signaled for the queue. The hardware will monitor this field, and not write\_dispatch\_id, on queue connect. The value written to this field is required to be made visible before writing to the queue's doorbell signal (referenced by hsa\_queue.doorbell\_signal) hardware location (referenced by hardware\_doorbell\_ptr or legacy\_hardware\_doorbell\_ptr). The value is always 64 bit, even in small machine model. |
-| 735:704 | 4 bytes | legacy\_doorbell\_lock | Must be initialized to 0 at queue creation time. For queues attached to GFX8 and earlier hardware, it is necessary to use a critical section to update the doorbell related fields of amd\_queue\_s.max\_legacy\_doorbell\_dispatch\_id\_plus\_1 and amd\_signal\_s.legacy\_hardware\_doorbell\_ptr. This field is initialized to 0, and set to 1 to lock the critical section. |
-| 1023:736 | 36 bytes | | Unused. Must be 0. If additional space is required for the fields accessed by the kernel isa, then this reserved space can be used, and space for an additional cache line(s) can also be added and not break backwards compatibility for CP micro code as the read\_dispatch\_id\_field\_base\_offset field below can be initialized with the correct offset to get to the read\_dispatch\_id field below. If the CP micro code fields need to be expanded that is possible as there are no fields after them. This allows both the kernel machine code fields and CP micro code accessed fields to expand in a backwards compatible way. |
-| 1024 | | | Start of cache line for fields accessed by the packet processor (CP micro code). These are kept in a single cache line to minimize memory accesses performed by CP micro code. |
+| 607:576 | 4 bytes | max\_cu\_id | The number of compute units on the agent to which the queue is associated. |
+| 639:608 | 4 bytes | max\_wave\_id | The number of wavefronts that can be executed on a single compute unit of the device to which the queue is associated. |
+| 703:640 | 8 bytes | max\_legacy\_doorbell\_dispatch\_id\_plus\_1 | For AMD_SIGNAL_KIND_LEGACY_DOORBELL, maximum value of write_dispatch_id signaled for the queue. This value is always 64-bit and never decreases. |
+| 735:704 | 4 bytes | legacy\_doorbell\_lock | For AMD_SIGNAL_KIND_LEGACY_DOORBELL, atomic variable used to protect critical section which updates the doorbell related fields. Initialized to 0, and set to 1 to lock the critical section. |
+| 1023:736 | 36 bytes | | Padding to next cache line. Unused and must be 0. |
+| 1024 | | | Start of cache line for fields accessed by the packet processor (CP micro code). |
+| 1087:1024 | 8 bytes | read_dispatch_id | 64-bit index of the next packet to be consumed by compute unit hardware. Initialized to 0 at queue creation time. |
+| 1119:1088 | 4 bytes | read_dispatch_id_field_base_byte_offset | Byte offset from the base of hsa_queue_t to the read_dispatch_id field. The CP microcode uses this and CP_HQD_PQ_RPTR_REPORT_ADDR[_HI] to calculate the base address of hsa_queue_t when amd_kernel_code_t.enable_sgpr_dispatch_ptr is set. This field must immediately follow read_dispatch_id. This allows the layout above the read_dispatch_id field to change, and still be able to get the base of the hsa_queue_t, which is needed to return if amd_kernel_code_t.enable_sgpr_queue_ptr is requested. These fields are defined by HSA Foundation and so could change. CP only uses fields below read_dispatch_id which are defined by AMD. |
 | 1536 | | | Start of next cache line for fields not accessed under normal conditions by the packet processor (CP micro code). These are kept in a single cache line to minimize memory accesses performed by CP micro code. |
 | 2048 | | | Total size 256 bytes. |
 
@@ -521,7 +523,7 @@ The following operations are defined on HSA Signals:
 | 0 | AMD_SIGNAL_KIND_INVALID | An invalid signal. |
 | 1 | AMD_SIGNAL_KIND_USER | A regular signal |
 | -1 | AMD_SIGNAL_KIND_DOORBELL | Doorbell signal with hardware support |
-| -2 | AMD_SIGNAL_KIND_LEGACY_DOORBELL | Doorbell signal with hardware support, legacy (GFX8) |
+| -2 | AMD_SIGNAL_KIND_LEGACY_DOORBELL | Doorbell signal with hardware support, legacy (GFX7/GFX8) |
 
 ### Signal object amd_signal_t
 
@@ -531,14 +533,14 @@ An AMD Signal object must always be 64 byte aligned to ensure it cannot span a p
 | --- | --- | --- | --- |
 | 63:0 | 8 bytes | kind | [Signal kind](#signal-kind-amd_signal_kind_t) |
 | 127:64 | 8 bytes | value | For AMD_SIGNAL_KIND_USER: signal payload value. In small machine model only the lower 32 bits is used, in large machine model all 64 bits are used. |
-| 127:64 | 8 bytes | legacy_hardware_doorbell_ptr | For AMD_SIGNAL_KIND_LEGACY_DOORBELL: pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
-| 127:64 | 8 bytes | hardware_doorbell_ptr | For AMD_SIGNAL_KIND_DOORBELL: pointer to the doorbell memory. This is IOMMU memory and is only writable and cannot be read. |
-| 191:128 | 8 bytes | event_mailbox_ptr | For AMD_SIGNAL_KIND_USER: mailbox address for event notification. |
-| 223:192 | 4 bytes | event_id | For AMD_SIGNAL_KIND_USER: event id for event notification. |
+| 127:64 | 8 bytes | legacy_hardware_doorbell_ptr | For AMD_SIGNAL_KIND_LEGACY_DOORBELL: pointer to the doorbell IOMMU memory (write-only). Used for hardware notification in [Signal Store](#signal-kernel-machine-code). |
+| 127:64 | 8 bytes | hardware_doorbell_ptr | For AMD_SIGNAL_KIND_DOORBELL: pointer to the doorbell IOMMU memory(write-only). Used for hardware notification in [Signal Store](#signal-kernel-machine-code). |
+| 191:128 | 8 bytes | event_mailbox_ptr | For AMD_SIGNAL_KIND_USER: mailbox address for event notification in [Signal operations](#signal-kernel-machine-code). |
+| 223:192 | 4 bytes | event_id | For AMD_SIGNAL_KIND_USER: event id for event notification in [Signal operations](#signal-kernel-machine-code). |
 | 255:224 | 4 bytes | | Padding. Must be 0. |
 | 319:256 | 8 bytes | start_ts | Start of the AQL packet timestamp, when profiled. |
 | 383:320 | 8 bytes | end_ts | End of the AQL packet timestamp, when profiled. |
-| 448:384 | 8 bytes | queue\_ptr | For AMD\_SIGNAL\_KIND\_\*DOORBELL: the address of the associated amd\_queue\_t, otherwise reserved and must be 0. |
+| 448:384 | 8 bytes | queue\_ptr | For AMD\_SIGNAL\_KIND\_\*DOORBELL: the address of the associated [amd\_queue\_t](#amd-queue), otherwise reserved and must be 0. |
 | 511:448 | 8 bytes | | Padding to 64 byte size. Must be 0. |
 | 512 | | | Total size 64 bytes |
 
@@ -567,8 +569,8 @@ The following is informal description of signal operations:
       * Load address of the spinlock from legacy_doorbell_lock field of amd_queue_t.
       * Compare-and-swap atomic loop, previous value 0, value to set 1 (memory order acquire, memory scope system).
       * s_sleep ISA instruction provides hint to the SQ to not to schedule the wave for a specified time.
-    * Use value+1 as packet index and initial value for legacy dispatch id.
-    * Atomic store of packet index (value+1) to max_legacy_doorbell_dispatch_id_plus_1 field (memory order relaxed, memory scope system). AMD hardware expects packet index to point beyond the last packet to be processed.
+    * Use value+1 as next packet index and initial value for legacy dispatch id. GFX7/GFX8 hardware expects packet index to point beyond the last packet to be processed.
+    * Atomic store of next packet index (value+1) to max_legacy_doorbell_dispatch_id_plus_1 field (memory order relaxed, memory scope system).
     * For small machine model:
       * legacy_dispatch_id = min(write_dispatch_id, read_dispatch_id + hsa_queue.size)
     * For GFX7:
