@@ -40,7 +40,7 @@ Table of Contents
   * [Signal kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
   * [Signal object amd_signal_t](#signal-object-amd_signal_t)
   * [Signal kernel machine code](#signal-kernel-machine-code)
-* [Debugtrap](#Debugtrap)
+* [Debugtrap](#debugtrap)
 * [References](#references)
 
 ## Introduction
