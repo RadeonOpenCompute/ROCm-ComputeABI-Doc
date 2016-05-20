@@ -40,6 +40,7 @@ Table of Contents
   * [Signal kind amd_signal_kind_t](#signal-kind-amd_signal_kind_t)
   * [Signal object amd_signal_t](#signal-object-amd_signal_t)
   * [Signal kernel machine code](#signal-kernel-machine-code)
+* [Debugtrap](#Debugtrap)
 * [References](#references)
 
 ## Introduction
@@ -582,6 +583,17 @@ The following is informal description of signal operations:
       * Address of the doorbell is in legacy_hardware_doorbell_ptr field of amd_signal_t.
     * Release spinlock protecting the legacy doorbell of the queue. Atomic store of value 0.
   * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
+
+
+## Debugtrap
+
+Debugtrap halts execution of the wavefront and generates debug exception. For more information, refer to "HSA Programmer Reference Manual Specification". debugtrap accepts 32-bit unsigned value as an argument.
+
+The following is a description of debugtrap sequence:
+  * v0 contains 32-bit argument of debugtrap
+  * s[0:1] contains Queue Ptr for the dispatch
+  * s_trap 0x1 
+
 
 ## References
 
