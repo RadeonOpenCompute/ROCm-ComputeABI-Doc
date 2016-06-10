@@ -6,12 +6,12 @@ Table of Contents
 =================
 
 * [Introduction](#introduction)
-* [Finalizer, Code Object, Executable and Loader](#finalizer,-code-object,-executable-and-loader)
+* [Finalizer, Code Object, Executable and Loader](#finalizer-code-object-executable-and-loader)
 * [Kernel dispatch](#kernel-dispatch)
 * [Hardware registers setup](#hardware-registers-setup)
 * [Initial kernel register state](#initial-kernel-register-state)
 * [Kernel prolog code](#kernel-prolog-code)
-* [Global/Readonly/Kernarg segments](#global/readonly/kernarg-segments)
+* [Global/Readonly/Kernarg segments](#globalreadonlykernarg-segments)
 * [Scratch memory swizzling](#scratch-memory-swizzling)
 * [Flat addressing](#flat-addressing)
 * [Flat scratch](#flat-scratch)
@@ -21,7 +21,6 @@ Table of Contents
   * [Memory model overview](#memory-model-overview)
   * [Memory operation constraints for global segment](#memory-operation-constraints-for-global-segment)
   * [Memory operation constraints for group segment](#memory-operation-constraints-for-group-segment)
-  * [Memory operation constraints for flat segment](#memory-operation-constraints-for-flat-segment)
   * [Memory fence constraints](#memory-fence-constraints)
 * [Instruction set architecture](#instruction-set-architecture)
 * [AMD Kernel Code](#amd-kernel-code)
@@ -456,13 +455,13 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 
 ## PCIe Gen3 Atomic Operations
 
-PCI Express Gen3 defines 3 PCIe transactions, each of which carries out a specific Atomic Operation (“AtomicOp”):
+PCI Express Gen3 defines 3 PCIe transactions, each of which carries out a specific Atomic Operation:
   * FetchAdd (Fetch and Add)
   * Swap (Unconditional Swap)
   * CAS (Compare and Swap)
 
-Atomic operations 
-  * Atomic Load/Store: FLAT_LOAD_DWORD*/FLAT_STORE_DWORD* / TLP MRd / MWr
+For compute capabilities supporting PCIe Gen3 atomics, system scope atomic operations use the following sequences:
+  * Atomic Load/Store: FLAT_LOAD_DWORD* / FLAT_STORE_DWORD* / TLP MRd / MWr
   * Atomic add: FLAT_ATOMIC_ADD / TLP FetchAdd
   * Atomic sub: FLAT_ATOMIC_ADD + negate/ TLP FetchAdd
   * Atomic swap: FLAT_ATOMIC_SWAP / TLP Swap
