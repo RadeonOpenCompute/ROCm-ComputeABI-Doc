@@ -31,6 +31,7 @@ Table of Contents
   * [AMD Machine Kind amd_machine_kind_t](#amd-machine-kind-amd_machine_kind_t)
   * [Float Round Mode amd_float_round_mode_t](#float-round-mode-amd_float_round_mode_t)
   * [Denorm Mode amd_float_denorm_mode_t](#denorm-mode-amd_float_denorm_mode_t)
+* [PCIe Gen3 Atomic Operations](#pcie-gen3-atomic-operations)
 * [AMD Queue](#amd-queue)
    * [HSA AQL Queue Object hsa_queue_t](#hsa-aql-queue-object-hsa_queue_t)
    * [AMD AQL Queue Object amd_queue_t](#amd-aql-queue-object-amd_queue_t)
@@ -453,6 +454,23 @@ The fields of amd_compute_pgm_rsrc2 are used by CP to set up COMPUTE\_PGM\_RSRC2
 | AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_SRC | 2 | Flush Source Denorms |
 | AMD\_FLOAT\_DENORM\_MODE\_FLUSH\_NONE | 3 | No Flush |
 
+## PCIe Gen3 Atomic Operations
+
+PCI Express Gen3 defines 3 PCIe transactions, each of which carries out a specific Atomic Operation (“AtomicOp”):
+  * FetchAdd (Fetch and Add)
+  * Swap (Unconditional Swap)
+  * CAS (Compare and Swap)
+
+Atomic operations 
+  * Atomic Load/Store: FLAT_LOAD_DWORD*/FLAT_STORE_DWORD* / TLP MRd / MWr
+  * Atomic add: FLAT_ATOMIC_ADD / TLP FetchAdd
+  * Atomic sub: FLAT_ATOMIC_ADD + negate/ TLP FetchAdd
+  * Atomic swap: FLAT_ATOMIC_SWAP / TLP Swap
+  * Atomic compare-and-swap: FLAT_ATOMIC_CMPSWAP / TLP CAS
+  * Other Atomic RMW operations: (max, min, and, or, xor, wrapinc, wrapdec): CAS loop
+
+PCIe Gen3 atomics are only supported on certain hardware configurations, for example, Haswell system.
+
 ## AMD Queue
 
 ### HSA AQL Queue Object hsa_queue_t
@@ -609,3 +627,4 @@ The following is a description of debugtrap sequence:
     * [amd_hsa_queue.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_queue.h)
     * [amd_hsa_signal.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_signal.h)
     * [amd_hsa_common.h](https://github.com/RadeonOpenCompute/ROCR-Runtime/blob/master/src/inc/amd_hsa_common.h)
+  *  [PCI Express Atomic Operations](https://www.pcisig.com/specifications/pciexpress/specifications/ECN_Atomic_Ops_080417.pdf)
