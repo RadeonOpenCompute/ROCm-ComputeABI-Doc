@@ -385,8 +385,8 @@ The fields of amd_compute_pgm_rsrc1 are used by CP to set up COMPUTE\_PGM\_RSRC1
 
 | **Bits** | **Size** | **Field Name** | **Description** |
 | --- | --- | --- | --- |
-| 5:0 | 6 bits | granulated\_workitem\_vgpr\_count | Number of vector registers used by each work-item, granularity is device specific. |
-| 9:6 | 4 bits | granulated\_wavefront\_sgpr\_count | Number of scalar registers used by a wavefront, granularity is device specific. This includes the special SGPRs for VCC, Flat Scratch (Base, and Size) and XNACK (for GFX8 (VI)+). It does not include the 16 SGPR added if a trap handler is enabled. |
+| 5:0 | 6 bits | granulated\_workitem\_vgpr\_count | Granulated number of vector registers used by each work-item minus 1 (i.e. if granulated number of vector registers is 2, then 1 is stored in this field). Granularity is device specific. |
+| 9:6 | 4 bits | granulated\_wavefront\_sgpr\_count | Granulated number of scalar registers used by a wavefront minus 1 (i.e. if granulated number of scalar registers is 4, then 3 is stored in this field). Granularity is device specific. This includes the special SGPRs for VCC, Flat Scratch (Base, and Size) and XNACK (for GFX8 (VI)+). It does not include the 16 SGPR added if a trap handler is enabled. |
 | 11:10 | 2 bits | priority | Drives spi\_priority in spi\_sq newWave cmd. |
 | 13:12 | 2 bits | float\_mode\_round\_32 | Wavefront initial [float round mode](#float-round-mode-amd_float_round_mode_t) for single precision floats (32 bit). |
 | 15:14 | 2 bits | float\_mode\_round\_16\_64 | Wavefront initial [float round mode](#float-round-mode-amd_float_round_mode_t) for double/half precision floats (64/16 bit). |
