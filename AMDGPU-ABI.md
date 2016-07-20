@@ -312,8 +312,7 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 | AMD | AMDGPU | 7 | 0 | 1 | GFX7, 1/2 double FP | FirePro W8100, W9100, S9150, S9170; Radeon R9 290, R9 290x, R390, R390x |
 | AMD | AMDGPU | 8 | 0 | 1 | GFX8, XNACK enabled | A10-8700 series APU |
 | AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, XNACK disabled, PCIe Gen3 atomics | FirePro S7150, S7100, W7100; Radeon R285, R9 380, R9 385; Mobile FirePro M7170 |
-| AMD | AMDGPU | 8 | 0 | 3 | GFX8, XNACK disabled, PCIe Gen3 atomics | Radeon R9 Nano, R9 Fury, R9 FuryX, Radeon Pro Duo
-FirePro S9 Nano, S9300x2; Radeon RX 480, RX 470 |
+| AMD | AMDGPU | 8 | 0 | 3 | GFX8, XNACK disabled, PCIe Gen3 atomics | Radeon R9 Nano, R9 Fury, R9 FuryX, Pro Duo, RX 470, RX 480; FirePro S9 Nano, S9300x2 |
 
 ## AMD Kernel Code
 
