@@ -307,16 +307,13 @@ AMDGPU ISA specifies instruction set architecture and capabilities used by machi
 
 These fields may be combined to form one defining string, for example, "AMD:AMDGPU:8:0:0".
 
-| **Vendor** | **Architecture** | **Major** | **Minor** | **Stepping** | **Comments** | **Examples** |
+| **Vendor** | **Architecture** | **Major** | **Minor** | **Stepping** | **Comments** | **Products** |
 | --- | --- | --- | --- | --- | --- | --- |
-| AMD | AMDGPU | 7 | 0 | 0 | GFX7, 1/16 double FP | Kaveri, Bonaire |
-| AMD | AMDGPU | 7 | 0 | 1 | GFX7, 1/2 double FP | Hawaii |
-| AMD | AMDGPU | 8 | 0 | 0 | GFX8, SPI register limitation, -XNACK | Iceland, Tonga |
-| AMD | AMDGPU | 8 | 0 | 1 | GFX8, +XNACK | Carrizo |
-| AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, -XNACK, PCIe Gen3 atomics | ROCm Tonga |
-| AMD | AMDGPU | 8 | 0 | 3 | GFX8, -XNACK, PCIe Gen3 atomics | ROCm Fiji |
-| AMD | AMDGPU | 8 | 0 | 4 | GFX8, -XNACK | Fiji |
-| AMD | AMDGPU | 8 | 1 | 0 | GFX8, +XNACK | Stoney |
+| AMD | AMDGPU | 7 | 0 | 1 | GFX7, 1/2 double FP | FirePro W8100, W9100, S9150, S9170; Radeon R9 290, R9 290x, R390, R390x |
+| AMD | AMDGPU | 8 | 0 | 1 | GFX8, XNACK enabled | A10-8700 series APU |
+| AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, XNACK disabled, PCIe Gen3 atomics | FirePro S7150, S7100, W7100; Radeon R285, R9 380, R9 385; Mobile FirePro M7170 |
+| AMD | AMDGPU | 8 | 0 | 3 | GFX8, XNACK disabled, PCIe Gen3 atomics | Radeon R9 Nano, R9 Fury, R9 FuryX, Radeon Pro Duo
+FirePro S9 Nano, S9300x2; Radeon RX 480, RX 470 |
 
 ## AMD Kernel Code
 
