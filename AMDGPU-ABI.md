@@ -305,7 +305,7 @@ AMDGPU ISA specifies instruction set architecture and capabilities used by machi
   * Architecture ("AMDGPU")
   * Major (GFXIP), minor and stepping versions
 
-These fields may be combined to form one defining string, for example, "AMD:AMDGPU:8:0:0".
+These fields may be combined to form one defining string, for example, "AMD:AMDGPU:8:0:1".
 
 | **Vendor** | **Architecture** | **Major** | **Minor** | **Stepping** | **Comments** | **Products** |
 | --- | --- | --- | --- | --- | --- | --- |
