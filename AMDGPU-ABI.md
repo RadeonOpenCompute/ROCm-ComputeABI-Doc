@@ -1,4 +1,4 @@
-# AMDGPU Compute Application Binary Interface
+	# AMDGPU Compute Application Binary Interface
 
 Version 0.40 (March 2016)
 
@@ -138,6 +138,8 @@ If buffer operations are used then the Global Buffer used to access Global/Reado
 
 If buffer operations are used to access Kernarg segment, Kernarg address must be added. It is available in dispatch packet (kernarg_address field) or as Kernarg Segment Ptr SGPR. Alternatively, scalar loads can be used if the kernarg offset is uniform, as the kernarg segment is constant for the duration of the kernel dispatch execution.
 
+For GFX9, global segment can be accessed with new GLOBAL_* instructions.
+
 ## Scratch memory swizzling
 
 Scratch memory may be used for private/spill/stack segment. Hardware will interleave (swizzle) scratch accesses of each lane of a wavefront by interleave (swizzle) element size to ensure each work-item gets a distinct memory location. Interleave size must be 2, 4, 8 or 16. The value used must match the value that the runtime configures the GPU flat scratch (SH\_STATIC\_MEM\_CONFIG.ELEMENT\_SIZE).
@@ -152,7 +154,7 @@ Flat address can be used in FLAT instructions and can access global, private (sc
 
 Flat access to scratch requires hardware aperture setup and setup in kernel prologue (see [Flat scratch](#flat-scratch)).
 
-Flat access to lds requires hardware aperture setup and M0 register setup (see [M0 register](#m0-register)).
+For GFX7/GFX8, flat access to lds requires hardware aperture setup and M0 register setup (see [M0 register](#m0-register)).
 
 Address operations for group/private segment may use fields from amd_queue_t, the address of which can be obtained with Queue Ptr SGPR.
 
@@ -200,9 +202,13 @@ For GFX7/GFX8, initialization uses Flat Scratch Init and Scratch Wave Offset sgp
   * The low word of Flat Scratch Init is 32 bit byte offset from SH\_HIDDEN\_PRIVATE\_BASE\_VIMID to base of memory for scratch for the queue executing the kernel dispatch. This is the lower 32 bits of amd\_queue\_t.scratch\_backing\_memory\_location and is the same offset used in computing the Scratch Segment Buffer base address. The prolog must add the value of Scratch Wave Offset to it, shift right by 8 (offset is in 256-byte units) and move to FLAT_SCRATCH_LO for use as the FLAT SCRATCH BASE in flat memory instructions.
   * The second word of Flat Scratch Init is 32 bit byte size of a single work-items scratch memory usage. This is directly loaded from the kernel dispatch packet Private Segment Byte Size and rounded up to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. The prolog must move it to FLAT_SCRATCH_LO for use as FLAT SCRATCH SIZE.
 
+For GFX9, Flat Scrath Init contains 64-bit address of scratch backing memory. The initialization sequence for FLAT_SCRATCH
+does 64-bit add of Flat Scratch Init and Scratch Wave Offset.
+
 ## M0 register
 
-M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
+For GF7/GFX8, M0 register must be initialized with total LDS size if kernel may access LDS via DS or flat operations. Total LDS size
+is available in dispatch packet. For M0, it is also possible to use maximum possible value of LDS for given target.
 
 ## Dynamic call stack
 
@@ -316,6 +322,8 @@ These fields may be combined to form one defining string, for example, "AMD:AMDG
 | AMD | AMDGPU | 8 | 0 | 2 | GFX8, SPI register limitation, XNACK disabled, PCIe Gen3 atomics | FirePro S7150, S7100, W7100; Radeon R285, R9 380, R9 385; Mobile FirePro M7170 |
 | AMD | AMDGPU | 8 | 0 | 3 | GFX8, XNACK disabled, PCIe Gen3 atomics | Radeon R9 Nano, R9 Fury, R9 FuryX, Pro Duo, RX 460, RX 470, RX 480; FirePro S9300x2 |
 | AMD | AMDGPU | 8 | 0 | 4 | GFX8, -XNACK | Legacy, Radeon R9 Nano, R9 Fury, R9 FuryX, Pro Duo, RX 460, RX 470, RX 480; FirePro S9300x2 |
+| AMD | AMDGPU | 9 | 0 | 0 | GFX9, -XNACK | |
+| AMD | AMDGPU | 9 | 0 | 1 | GFX9, +XNACK | |
 
 ## AMD Kernel Code
 
@@ -598,6 +606,10 @@ The following is informal description of signal operations:
     * Store legacy dispatch id to the hardware MMIO doorbell.
       * Address of the doorbell is in legacy_hardware_doorbell_ptr field of amd_signal_t.
     * Release spinlock protecting the legacy doorbell of the queue. Atomic store of value 0.
+  * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
+* For AMD_SIGNAL_KIND_DOORBELL:
+  * Signal Store uses the following sequence:
+    * Atomic store of value to the hardware MMIO doorbell.
   * Signal Load/Signal Wait/Signal Read-Modify-Write Atomics are not supported. Instruction sequence for these operations and this signal kind is empty.
 
 
