@@ -94,23 +94,23 @@ The number of enabled registers must match value in compute\_pgm\_rsrc2.user\_sg
 
 The following table defines SGPR registers that can be enabled and their order.
 
-| **SGPR Order** | **Number of Registers** | **Name**  | **Description** |
-| --- | --- | --- | --- |
-| First | 4 | Private Segment Buffer (enable\_sgpr\_private\_segment\_buffer) | V\# that can be used, together with Scratch Wave Offset as an offset, to access the Private/Spill/Arg segments using a segment address. CP uses the value from amd\_queue\_t.scratch\_resource\_descriptor. |
-| then | 2 | Dispatch Ptr (enable\_sgpr\_dispatch\_ptr) | 64 bit address of AQL dispatch packet for kernel actually executing. |
-| then | 2 | Queue Ptr (enable\_sgpr\_queue\_ptr) | 64 bit address of amd\_queue\_t object for AQL queue on which the dispatch packet was queued. |
-| then | 2 | Kernarg Segment Ptr (enable\_sgpr\_kernarg\_segment\_ptr) | 64 bit address of Kernarg segment. This is directly copied from the kernarg\_address in the kernel dispatch packet. Having CP load it once avoids loading it at the beginning of every wavefront. |
-| then | 2 | Dispatch Id (enable\_sgpr\_dispatch\_id) | 64 bit Dispatch ID of the dispatch packet being executed. |
-| then | 2 | Flat Scratch Init (enable\_sgpr\_flat\_scratch\_init) | Value used for FLAT_SCRATCH register initialization. Refer to [Flat scratch](#flat-scratch) for more information. |
-| then | 1 | Private Segment Size (enable\_sgpr\_private\_segment\_size) | The 32 bit byte size of a single work-items scratch memory allocation. This is the value from the kernel dispatch packet Private Segment Byte Size rounded up by CP to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. Not used for GFX7/GFX8 since it is the same value as the second SGPR of Flat Scratch Init. |
-| then | 1 | Grid Work-Group Count X (enable\_sgpr\_grid\_workgroup\_count\_X) | 32 bit count of the number of work-groups in the X dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.x + workgroup\_size.x - 1) / workgroup\_size.x).
-| then | 1 | Grid Work-Group Count Y (enable\_sgpr\_grid\_workgroup\_count\_Y && less than 16 previous SGPRs) | 32 bit count of the number of work-groups in the Y dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.y + workgroup\_size.y - 1) / workgroupSize.y). Only initialized if \<16 previous SGPRs initialized. |
-| then | 1 | Grid Work-Group Count Z (enable\_sgpr\_grid\_workgroup\_count\_Z && less than 16 previous SGPRs) | 32 bit count of the number of work-groups in the Z dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.z + workgroup\_size.z - 1) / workgroupSize.z). Only initialized if \<16 previous SGPRs initialized. |
-| then | 1 | Work-Group Id X (enable\_sgpr\_workgroup\_id\_X) | 32 bit work group id in X dimension of grid for wavefront. Always present. |
-| then | 1 | Work-Group Id Y (enable\_sgpr\_workgroup\_id\_Y) | 32 bit work group id in Y dimension of grid for wavefront. |
-| then | 1 | Work-Group Id Z (enable\_sgpr\_workgroup\_id\_Z) | 32 bit work group id in Z dimension of grid for wavefront. If present then Work-group Id Y will also be present. |
-| then | 1 | Work-Group Info (enable\_sgpr\_workgroup\_info) | {first\_wave, 14b0000, ordered\_append\_term[10:0], threadgroup\_size\_in\_waves[5:0]} |
-| then | 1 | Private Segment Wave Byte Offset (enable\_sgpr\_private\_segment\_wave\_byte\_offset) | 32 bit byte offset from base of scratch base of queue executing the kernel dispatch. Must be used as an offset with Private/Spill/Arg segment address when using Scratch Segment Buffer. It must be added to Flat Scratch Offset if setting up FLAT SCRATCH for flat addressing. |
+| **SGPR Order** | **Number of Registers** | **Name**  | **Description** | ** User SGPR ** |
+| --- | --- | --- | --- | --- |
+| First | 4 | Private Segment Buffer (enable\_sgpr\_private\_segment\_buffer) | V\# that can be used, together with Scratch Wave Offset as an offset, to access the Private/Spill/Arg segments using a segment address. CP uses the value from amd\_queue\_t.scratch\_resource\_descriptor. | Yes |
+| then | 2 | Dispatch Ptr (enable\_sgpr\_dispatch\_ptr) | 64 bit address of AQL dispatch packet for kernel actually executing. | Yes |
+| then | 2 | Queue Ptr (enable\_sgpr\_queue\_ptr) | 64 bit address of amd\_queue\_t object for AQL queue on which the dispatch packet was queued. | Yes |
+| then | 2 | Kernarg Segment Ptr (enable\_sgpr\_kernarg\_segment\_ptr) | 64 bit address of Kernarg segment. This is directly copied from the kernarg\_address in the kernel dispatch packet. Having CP load it once avoids loading it at the beginning of every wavefront. | Yes |
+| then | 2 | Dispatch Id (enable\_sgpr\_dispatch\_id) | 64 bit Dispatch ID of the dispatch packet being executed. | Yes |
+| then | 2 | Flat Scratch Init (enable\_sgpr\_flat\_scratch\_init) | Value used for FLAT_SCRATCH register initialization. Refer to [Flat scratch](#flat-scratch) for more information. | Yes |
+| then | 1 | Private Segment Size (enable\_sgpr\_private\_segment\_size) | The 32 bit byte size of a single work-items scratch memory allocation. This is the value from the kernel dispatch packet Private Segment Byte Size rounded up by CP to a multiple of DWORD. Having CP load it once avoids loading it at the beginning of every wavefront. Not used for GFX7/GFX8 since it is the same value as the second SGPR of Flat Scratch Init. | Yes |
+| then | 1 | Grid Work-Group Count X (enable\_sgpr\_grid\_workgroup\_count\_X) | 32 bit count of the number of work-groups in the X dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.x + workgroup\_size.x - 1) / workgroup\_size.x). | Yes |
+| then | 1 | Grid Work-Group Count Y (enable\_sgpr\_grid\_workgroup\_count\_Y && less than 16 previous SGPRs) | 32 bit count of the number of work-groups in the Y dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.y + workgroup\_size.y - 1) / workgroupSize.y). Only initialized if \<16 previous SGPRs initialized. | Yes |
+| then | 1 | Grid Work-Group Count Z (enable\_sgpr\_grid\_workgroup\_count\_Z && less than 16 previous SGPRs) | 32 bit count of the number of work-groups in the Z dimension for the grid being executed. Computed from the fields in the kernel dispatch packet as ((grid\_size.z + workgroup\_size.z - 1) / workgroupSize.z). Only initialized if \<16 previous SGPRs initialized. | Yes |
+| then | 1 | Work-Group Id X (enable\_sgpr\_workgroup\_id\_X) | 32 bit work group id in X dimension of grid for wavefront. Always present. | No |
+| then | 1 | Work-Group Id Y (enable\_sgpr\_workgroup\_id\_Y) | 32 bit work group id in Y dimension of grid for wavefront. | No |
+| then | 1 | Work-Group Id Z (enable\_sgpr\_workgroup\_id\_Z) | 32 bit work group id in Z dimension of grid for wavefront. If present then Work-group Id Y will also be present. | No |
+| then | 1 | Work-Group Info (enable\_sgpr\_workgroup\_info) | {first\_wave, 14b0000, ordered\_append\_term[10:0], threadgroup\_size\_in\_waves[5:0]} | No |
+| then | 1 | Private Segment Wave Byte Offset (enable\_sgpr\_private\_segment\_wave\_byte\_offset) | 32 bit byte offset from base of scratch base of queue executing the kernel dispatch. Must be used as an offset with Private/Spill/Arg segment address when using Scratch Segment Buffer. It must be added to Flat Scratch Offset if setting up FLAT SCRATCH for flat addressing. | No |
 
 VGPR register numbers used for enabled registers are dense starting at VGPR0: the first enabled register is VGPR0, the next enabled register is VGPR1 etc.; disabled registers do not have a VGPR number.
 
